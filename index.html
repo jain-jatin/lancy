@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lancy — AI Housekeeping Supervisor Shift Partner</title>
+    <!-- Google Fonts: Inter & Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="logo-area">
+            <div class="logo-icon"><i class="fa-solid fa-robot"></i></div>
+            <div class="logo-text">
+                <h1>Lancy</h1>
+                <span>AI Housekeeping Supervisor Shift Partner</span>
+            </div>
+        </div>
+        <div class="header-actions">
+            <a href="docs/Lancy_PRD_Final.md" class="btn btn-secondary btn-sm" target="_blank">
+                <i class="fa-regular fa-file-lines"></i> View PRD (Markdown)
+            </a>
+            <a href="docs/Lancy_PRD_Final.pdf" class="btn btn-primary btn-sm" download>
+                <i class="fa-regular fa-file-pdf"></i> Download PRD (PDF)
+            </a>
+        </div>
+    </header>
+
+    <main class="app-container">
+        <!-- Dashboard Intro -->
+        <section class="intro-banner">
+            <h2>Interactive Multi-Role Prototype</h2>
+            <p>
+                Experience the real-time collaboration between the <strong>Supervisor Interface (Marcus)</strong> and the 
+                <strong>Housekeeper Interface (Rosa)</strong>. Simulate cleanings, trigger AI-driven schedule re-sequencing, 
+                and approve room completions from a single screen.
+            </p>
+        </section>
+
+        <section class="device-workspace">
+            <!-- DEVICE 1: SUPERVISOR (MARCUS) -->
+            <div class="device-wrapper">
+                <div class="device-label">
+                    <span class="role">Supervisor App</span>
+                    <span class="name">Marcus (Floor Manager)</span>
+                </div>
+                <div class="smartphone-frame">
+                    <div class="speaker-notch"></div>
+                    <div class="screen-content">
+                        <!-- Supervisor App Header -->
+                        <div class="mobile-app-header">
+                            <div class="user-avatar">
+                                <i class="fa-solid fa-user-tie"></i>
+                            </div>
+                            <div class="app-title">
+                                <h3>Lancy Supervisor</h3>
+                                <span class="status-indicator online">Online</span>
+                            </div>
+                            <div class="header-icons">
+                                <i class="fa-regular fa-bell" id="supervisor-notif-btn"></i>
+                            </div>
+                        </div>
+
+                        <!-- Supervisor App Tabs -->
+                        <div class="mobile-tabs">
+                            <button class="tab-btn active" data-tab="feed">
+                                <i class="fa-solid fa-bolt"></i> Feed
+                            </button>
+                            <button class="tab-btn" data-tab="board">
+                                <i class="fa-solid fa-grip"></i> Board
+                            </button>
+                        </div>
+
+                        <!-- Supervisor App Body -->
+                        <div class="mobile-body">
+                            <!-- Tab: Feed -->
+                            <div class="tab-content active" id="tab-feed">
+                                <div class="shift-stats-strip">
+                                    <div class="stat-item">
+                                        <span class="value" id="stats-pending">25</span>
+                                        <span class="label">Turn Tasks</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="value" id="stats-active">5</span>
+                                        <span class="label">Attendants</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="value text-success" id="stats-ready">0</span>
+                                        <span class="label">Ready Rooms</span>
+                                    </div>
+                                </div>
+
+                                <div class="feed-container" id="lancy-feed">
+                                    <!-- Dynamic cards inserted here by JS -->
+                                </div>
+                            </div>
+
+                            <!-- Tab: Board -->
+                            <div class="tab-content" id="tab-board">
+                                <div class="board-filters">
+                                    <span class="filter-pill active" data-filter="all">All</span>
+                                    <span class="filter-pill" data-filter="cleaning">Cleaning</span>
+                                    <span class="filter-pill" data-filter="inspection">Inspection</span>
+                                    <span class="filter-pill" data-filter="ready">Ready</span>
+                                </div>
+                                <div class="rooms-grid" id="rooms-board-grid">
+                                    <!-- Dynamic room items inserted here by JS -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Voice Dictation Footer Bar -->
+                        <div class="supervisor-voice-footer">
+                            <button class="voice-mic-btn" id="voice-dictate-btn">
+                                <i class="fa-solid fa-microphone"></i>
+                            </button>
+                            <span class="voice-hint">Hold to dictate floor commands</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DEVICE 2: HOUSEKEEPER SIMULATOR (ROSA / SIMULATORS) -->
+            <div class="device-wrapper">
+                <div class="device-label">
+                    <span class="role">Attendant Simulator</span>
+                    <span class="name">Rosa (Housekeeper)</span>
+                </div>
+                <div class="smartphone-frame attendant-theme">
+                    <div class="speaker-notch"></div>
+                    <div class="screen-content">
+                        <!-- Attendant App Header -->
+                        <div class="mobile-app-header">
+                            <div class="user-avatar">
+                                <i class="fa-solid fa-circle-user"></i>
+                            </div>
+                            <div class="app-title">
+                                <h3>Rosa — Attendant</h3>
+                                <div class="language-dropdown-container">
+                                    <select id="attendant-lang-select" class="lang-selector">
+                                        <option value="en">🇺🇸 English</option>
+                                        <option value="es">🇪🇸 Español</option>
+                                        <option value="hi">🇮🇳 हिन्दी</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Attendant Current Task Panel -->
+                        <div class="attendant-current-task-panel">
+                            <div class="panel-header">
+                                <span class="badge badge-pulse" id="attendant-task-status-lbl">Active Task</span>
+                                <span class="room-timer" id="attendant-timer">00:00</span>
+                            </div>
+                            <div class="task-room-details">
+                                <h4 id="attendant-room-lbl">Room 308</h4>
+                                <p id="attendant-desc-lbl">Early Check-in Priority (VIP Guest: 12:30 PM SLA)</p>
+                            </div>
+                            <div class="attendant-checklist">
+                                <h5><i class="fa-solid fa-list-check"></i> Checklist</h5>
+                                <ul>
+                                    <li>
+                                        <label class="checkbox-container">
+                                            <input type="checkbox" id="check-belongings">
+                                            <span class="checkmark"></span>
+                                            <span class="check-text" id="lbl-check-belongings">No guest belongings remaining</span>
+                                        </label>
+                                    </li>
+                                    <li>
+                                        <label class="checkbox-container">
+                                            <input type="checkbox" id="check-bedding">
+                                            <span class="checkmark"></span>
+                                            <span class="check-text" id="lbl-check-bedding">Bed linens & towels refreshed</span>
+                                        </label>
+                                    </li>
+                                    <li>
+                                        <label class="checkbox-container">
+                                            <input type="checkbox" id="check-sanitary">
+                                            <span class="checkmark"></span>
+                                            <span class="check-text" id="lbl-check-sanitary">Bathroom fully sanitized</span>
+                                        </label>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div class="attendant-actions">
+                                <button class="btn btn-block btn-warning btn-md" id="attendant-action-btn" disabled>
+                                    Confirm Items Cleared
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Attendant Chat Section -->
+                        <div class="attendant-chat-section">
+                            <div class="chat-header">
+                                <span><i class="fa-regular fa-comment-dots"></i> Chat with Lancy (AI)</span>
+                            </div>
+                            <div class="attendant-chat-history" id="attendant-chat-log">
+                                <div class="chat-msg ai-msg">
+                                    <p id="chat-welcome-msg">Hola Rosa, please start cleaning Room 308 first. Guest has checked out. Let me know if any items are left behind!</p>
+                                    <span class="chat-time">10:02 AM</span>
+                                </div>
+                            </div>
+                            <div class="attendant-chat-input-bar">
+                                <input type="text" placeholder="Type a message..." id="attendant-chat-input">
+                                <button id="attendant-chat-send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dynamic Overlay / Voice Simulation Screen -->
+        <div class="voice-overlay" id="voice-overlay-screen">
+            <div class="voice-card">
+                <div class="pulse-ring">
+                    <div class="ring ring-1"></div>
+                    <div class="ring ring-2"></div>
+                    <div class="ring ring-3"></div>
+                    <i class="fa-solid fa-microphone"></i>
+                </div>
+                <h3>Lancy Listening...</h3>
+                <p class="transcript-placeholder" id="voice-transcript">"Rosa, when you finish 308, jump to 310 next."</p>
+                <span class="voice-status">Analyzing floor layout and housekeeper coordinates...</span>
+                <div class="voice-actions">
+                    <button class="btn btn-secondary btn-sm" id="voice-cancel-btn">Cancel</button>
+                    <button class="btn btn-primary btn-sm" id="voice-submit-btn">Send Command</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Success Toast Notifications -->
+        <div class="toast-container" id="toast-wrapper"></div>
+    </main>
+
+    <footer class="app-footer-info">
+        <p>&copy; 2026 Lancy PM OS Project — Designed by Jatin Jain. Premium AI-first operations partner.</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
