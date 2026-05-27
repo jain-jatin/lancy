@@ -68,115 +68,115 @@ export function timeToMinutes(timeStr: string): number {
 }
 
 export const masterTimeline: SimEvent[] = [
-  // --- ANA (Arrives 07:30) ---
-  { room: "201", event: "DIRTY", time: "07:00" },
-  { room: "201", event: "INSPECTION", time: "07:30", housekeeper: "Ana" },
-  { room: "201", event: "CLEANING", time: "07:45", housekeeper: "Ana" },
-  { room: "201", event: "REVIEW", time: "08:10", housekeeper: "Ana" },
-  { room: "201", event: "READY", time: "08:15", housekeeper: "Ana" },
+  // --- ANA (Arrives 07:30, starts standard work at 10:00 after checkouts) ---
+  { room: "201", event: "DIRTY", time: "10:00" },
+  { room: "201", event: "INSPECTION", time: "10:00", housekeeper: "Ana" },
+  { room: "201", event: "CLEANING", time: "10:15", housekeeper: "Ana" },
+  { room: "201", event: "REVIEW", time: "10:40", housekeeper: "Ana" },
+  { room: "201", event: "READY", time: "10:45", housekeeper: "Ana" },
 
-  { room: "202", event: "DIRTY", time: "08:15" },
-  { room: "202", event: "INSPECTION", time: "08:15", housekeeper: "Ana" },
-  { room: "202", event: "CLEANING", time: "08:30", housekeeper: "Ana" },
-  { room: "202", event: "REVIEW", time: "08:55", housekeeper: "Ana" },
-  { room: "202", event: "READY", time: "09:00", housekeeper: "Ana" },
+  { room: "202", event: "DIRTY", time: "10:00" },
+  { room: "202", event: "INSPECTION", time: "10:45", housekeeper: "Ana" },
+  { room: "202", event: "CLEANING", time: "11:00", housekeeper: "Ana" },
+  { room: "202", event: "REVIEW", time: "11:25", housekeeper: "Ana" },
+  { room: "202", event: "READY", time: "11:30", housekeeper: "Ana" },
 
-  { room: "203", event: "DIRTY", time: "09:00" },
-  { room: "203", event: "INSPECTION", time: "09:00", housekeeper: "Ana" },
-  { room: "203", event: "CLEANING", time: "09:15", housekeeper: "Ana" },
-  { room: "203", event: "REVIEW", time: "09:50", housekeeper: "Ana" },
-  { room: "203", event: "READY", time: "09:55", housekeeper: "Ana" },
+  { room: "203", event: "DIRTY", time: "10:00" },
+  { room: "203", event: "INSPECTION", time: "11:30", housekeeper: "Ana" },
+  { room: "203", event: "CLEANING", time: "11:45", housekeeper: "Ana" },
+  { room: "203", event: "REVIEW", time: "12:20", housekeeper: "Ana" },
+  { room: "203", event: "READY", time: "12:25", housekeeper: "Ana" },
 
-  { room: "502", event: "CLEANING", time: "09:55", housekeeper: "Ana" },
-  { room: "502", event: "READY", time: "10:20", housekeeper: "Ana" },
+  { room: "502", event: "CLEANING", time: "12:25", housekeeper: "Ana" },
+  { room: "502", event: "READY", time: "12:50", housekeeper: "Ana" },
 
-  // --- ROSA (Arrives 07:53) ---
-  { room: "204", event: "DIRTY", time: "07:00" },
-  { room: "204", event: "INSPECTION", time: "07:53", housekeeper: "Rosa" },
-  { room: "204", event: "DAMAGE_REPORT", time: "08:03", housekeeper: "Rosa", note: "Broken mirror reported" },
-  { room: "204", event: "CLEANING", time: "08:08", housekeeper: "Rosa" },
-  { room: "204", event: "REVIEW", time: "08:43", housekeeper: "Rosa" },
-  { room: "204", event: "READY", time: "08:48", housekeeper: "Rosa" },
+  // --- ROSA (Arrives 07:53, starts standard work at 10:00 after checkouts) ---
+  { room: "204", event: "DIRTY", time: "10:00" },
+  { room: "204", event: "INSPECTION", time: "10:00", housekeeper: "Rosa" },
+  { room: "204", event: "DAMAGE_REPORT", time: "10:10", housekeeper: "Rosa", note: "Broken mirror reported" },
+  { room: "204", event: "CLEANING", time: "10:15", housekeeper: "Rosa" },
+  { room: "204", event: "REVIEW", time: "10:50", housekeeper: "Rosa" },
+  { room: "204", event: "READY", time: "10:55", housekeeper: "Rosa" },
 
-  { room: "205", event: "DIRTY", time: "08:48" },
-  { room: "205", event: "INSPECTION", time: "08:48", housekeeper: "Rosa" },
-  { room: "205", event: "CLEANING", time: "09:03", housekeeper: "Rosa" },
-  { room: "205", event: "REVIEW", time: "09:48", housekeeper: "Rosa" },
-  { room: "205", event: "READY", time: "09:53", housekeeper: "Rosa" },
+  { room: "205", event: "DIRTY", time: "10:00" },
+  { room: "205", event: "INSPECTION", time: "10:55", housekeeper: "Rosa" },
+  { room: "205", event: "CLEANING", time: "11:10", housekeeper: "Rosa" },
+  { room: "205", event: "REVIEW", time: "11:55", housekeeper: "Rosa" },
+  { room: "205", event: "READY", time: "12:00", housekeeper: "Rosa" },
 
-  { room: "301", event: "DIRTY", time: "09:53" },
-  { room: "301", event: "INSPECTION", time: "09:53", housekeeper: "Rosa" },
-  { room: "301", event: "CLEANING", time: "10:08", housekeeper: "Rosa" },
-  { room: "301", event: "REVIEW", time: "10:33", housekeeper: "Rosa" },
-  { room: "301", event: "READY", time: "10:38", housekeeper: "Rosa" },
+  { room: "301", event: "DIRTY", time: "10:00" },
+  { room: "301", event: "INSPECTION", time: "12:00", housekeeper: "Rosa" },
+  { room: "301", event: "CLEANING", time: "12:15", housekeeper: "Rosa" },
+  { room: "301", event: "REVIEW", time: "12:40", housekeeper: "Rosa" },
+  { room: "301", event: "READY", time: "12:45", housekeeper: "Rosa" },
 
-  { room: "404", event: "CLEANING", time: "10:38", housekeeper: "Rosa" },
-  { room: "404", event: "READY", time: "11:13", housekeeper: "Rosa" },
+  { room: "404", event: "CLEANING", time: "12:45", housekeeper: "Rosa" },
+  { room: "404", event: "READY", time: "13:20", housekeeper: "Rosa" },
 
-  // --- JAMES (Arrives 07:12) ---
-  { room: "302", event: "DIRTY", time: "07:00" },
-  { room: "302", event: "INSPECTION", time: "07:12", housekeeper: "James" },
-  { room: "302", event: "CLEANING", time: "07:27", housekeeper: "James" },
-  { room: "302", event: "REVIEW", time: "07:52", housekeeper: "James" },
-  { room: "302", event: "READY", time: "07:57", housekeeper: "James" },
+  // --- JAMES (Arrives 07:12, starts standard work at 10:00 after checkouts) ---
+  { room: "302", event: "DIRTY", time: "10:00" },
+  { room: "302", event: "INSPECTION", time: "10:00", housekeeper: "James" },
+  { room: "302", event: "CLEANING", time: "10:15", housekeeper: "James" },
+  { room: "302", event: "REVIEW", time: "10:40", housekeeper: "James" },
+  { room: "302", event: "READY", time: "10:45", housekeeper: "James" },
 
-  { room: "303", event: "DIRTY", time: "07:57" },
-  { room: "303", event: "INSPECTION", time: "07:57", housekeeper: "James" },
-  { room: "303", event: "CLEANING", time: "08:12", housekeeper: "James" },
-  { room: "303", event: "TV_REPORT", time: "08:27", housekeeper: "James", note: "TV not working in 303" },
-  { room: "303", event: "REVIEW", time: "08:47", housekeeper: "James" },
-  { room: "303", event: "READY", time: "08:52", housekeeper: "James" },
+  { room: "303", event: "DIRTY", time: "10:00" },
+  { room: "303", event: "INSPECTION", time: "10:45", housekeeper: "James" },
+  { room: "303", event: "CLEANING", time: "11:00", housekeeper: "James" },
+  { room: "303", event: "TV_REPORT", time: "11:15", housekeeper: "James", note: "TV not working in 303" },
+  { room: "303", event: "REVIEW", time: "11:35", housekeeper: "James" },
+  { room: "303", event: "READY", time: "11:40", housekeeper: "James" },
 
-  { room: "304", event: "DIRTY", time: "08:52" },
-  { room: "304", event: "INSPECTION", time: "08:52", housekeeper: "James" },
-  { room: "304", event: "CLEANING", time: "09:07", housekeeper: "James" },
-  { room: "304", event: "REVIEW", time: "09:42", housekeeper: "James" },
-  { room: "304", event: "READY", time: "09:47", housekeeper: "James" },
+  { room: "304", event: "DIRTY", time: "10:00" },
+  { room: "304", event: "INSPECTION", time: "11:40", housekeeper: "James" },
+  { room: "304", event: "CLEANING", time: "11:55", housekeeper: "James" },
+  { room: "304", event: "REVIEW", time: "12:30", housekeeper: "James" },
+  { room: "304", event: "READY", time: "12:35", housekeeper: "James" },
 
-  // --- PRIYA (Arrives 07:45) ---
-  { room: "305", event: "DIRTY", time: "07:00" },
-  { room: "305", event: "INSPECTION", time: "07:45", housekeeper: "Priya" },
-  { room: "305", event: "CLEANING", time: "08:00", housekeeper: "Priya" },
-  { room: "305", event: "REVIEW", time: "08:45", housekeeper: "Priya" },
-  { room: "305", event: "READY", time: "08:50", housekeeper: "Priya" },
+  // --- PRIYA (Arrives 07:45, starts standard work at 10:00 after checkouts) ---
+  { room: "305", event: "DIRTY", time: "10:00" },
+  { room: "305", event: "INSPECTION", time: "10:00", housekeeper: "Priya" },
+  { room: "305", event: "CLEANING", time: "10:15", housekeeper: "Priya" },
+  { room: "305", event: "REVIEW", time: "11:00", housekeeper: "Priya" },
+  { room: "305", event: "READY", time: "11:05", housekeeper: "Priya" },
 
-  { room: "401", event: "DIRTY", time: "08:50" },
-  { room: "401", event: "INSPECTION", time: "08:50", housekeeper: "Priya" },
-  { room: "401", event: "CLEANING", time: "09:05", housekeeper: "Priya" },
-  { room: "401", event: "REVIEW", time: "09:30", housekeeper: "Priya" },
-  { room: "401", event: "READY", time: "09:35", housekeeper: "Priya" },
+  { room: "401", event: "DIRTY", time: "10:00" },
+  { room: "401", event: "INSPECTION", time: "11:05", housekeeper: "Priya" },
+  { room: "401", event: "CLEANING", time: "11:20", housekeeper: "Priya" },
+  { room: "401", event: "REVIEW", time: "11:45", housekeeper: "Priya" },
+  { room: "401", event: "READY", time: "11:50", housekeeper: "Priya" },
 
-  { room: "402", event: "DIRTY", time: "09:35" },
-  { room: "402", event: "INSPECTION", time: "09:35", housekeeper: "Priya" },
-  { room: "402", event: "CLEANING", time: "09:50", housekeeper: "Priya" },
-  { room: "402", event: "LEAK_REPORT", time: "10:00", housekeeper: "Priya", note: "Bathroom leaking badly" },
-  { room: "402", event: "BLOCKED", time: "10:02", housekeeper: "Priya" },
+  { room: "402", event: "DIRTY", time: "10:00" },
+  { room: "402", event: "INSPECTION", time: "11:50", housekeeper: "Priya" },
+  { room: "402", event: "CLEANING", time: "12:05", housekeeper: "Priya" },
+  { room: "402", event: "LEAK_REPORT", time: "12:15", housekeeper: "Priya", note: "Bathroom leaking badly" },
+  { room: "402", event: "BLOCKED", time: "12:17", housekeeper: "Priya" },
 
-  { room: "405", event: "CLEANING", time: "10:05", housekeeper: "Priya" },
-  { room: "405", event: "READY", time: "10:50", housekeeper: "Priya" },
+  { room: "405", event: "CLEANING", time: "12:20", housekeeper: "Priya" },
+  { room: "405", event: "READY", time: "13:05", housekeeper: "Priya" },
 
-  // --- SOFIA (Arrives 08:15) ---
-  { room: "403", event: "DIRTY", time: "07:00" },
-  { room: "403", event: "INSPECTION", time: "08:15", housekeeper: "Sofia" },
-  { room: "403", event: "CLEANING", time: "08:30", housekeeper: "Sofia" },
-  { room: "403", event: "REVIEW", time: "09:05", housekeeper: "Sofia" },
-  { room: "403", event: "READY", time: "09:10", housekeeper: "Sofia" },
+  // --- SOFIA (Arrives 08:15, starts standard work at 10:00 after checkouts) ---
+  { room: "403", event: "DIRTY", time: "10:00" },
+  { room: "403", event: "INSPECTION", time: "10:00", housekeeper: "Sofia" },
+  { room: "403", event: "CLEANING", time: "10:15", housekeeper: "Sofia" },
+  { room: "403", event: "REVIEW", time: "10:50", housekeeper: "Sofia" },
+  { room: "403", event: "READY", time: "10:55", housekeeper: "Sofia" },
 
-  { room: "503", event: "DIRTY", time: "09:10" },
-  { room: "503", event: "INSPECTION", time: "09:10", housekeeper: "Sofia" },
-  { room: "503", event: "CLEANING", time: "09:25", housekeeper: "Sofia" },
-  { room: "503", event: "REVIEW", time: "10:00", housekeeper: "Sofia" },
-  { room: "503", event: "READY", time: "10:05", housekeeper: "Sofia" },
+  { room: "503", event: "DIRTY", time: "10:00" },
+  { room: "503", event: "INSPECTION", time: "10:55", housekeeper: "Sofia" },
+  { room: "503", event: "CLEANING", time: "11:10", housekeeper: "Sofia" },
+  { room: "503", event: "REVIEW", time: "11:45", housekeeper: "Sofia" },
+  { room: "503", event: "READY", time: "11:50", housekeeper: "Sofia" },
 
-  { room: "505", event: "DIRTY", time: "10:05" },
-  { room: "505", event: "INSPECTION", time: "10:05", housekeeper: "Sofia" },
-  { room: "505", event: "CLEANING", time: "10:20", housekeeper: "Sofia" },
-  { room: "505", event: "REVIEW", time: "11:05", housekeeper: "Sofia" },
-  { room: "505", event: "READY", time: "11:10", housekeeper: "Sofia" },
+  { room: "505", event: "DIRTY", time: "10:00" },
+  { room: "505", event: "INSPECTION", time: "11:50", housekeeper: "Sofia" },
+  { room: "505", event: "CLEANING", time: "12:05", housekeeper: "Sofia" },
+  { room: "505", event: "REVIEW", time: "12:50", housekeeper: "Sofia" },
+  { room: "505", event: "READY", time: "12:55", housekeeper: "Sofia" },
 
   // --- EMPTY ROOM ARRIVALS ---
-  { room: "501", event: "OCCUPIED", time: "13:00" },
-  { room: "504", event: "OCCUPIED", time: "13:00" },
+  { room: "501", event: "OCCUPIED", time: "12:00" },
+  { room: "504", event: "OCCUPIED", time: "12:00" },
 ];
 
 export interface SimState {
@@ -376,6 +376,23 @@ export function compileSimulation(simTime: string): SimState {
       if (idx !== -1) {
         reviewQueue.splice(idx, 1);
       }
+    }
+  });
+
+  // Apply standard checkout at 10:00 AM (600 mins) and check-in at 12:00 PM (720 mins)
+  Object.keys(roomsState).forEach((num) => {
+    const r = roomsState[num];
+    
+    // 10:00 AM Checkout: If room is still occupied and is in checkOutRooms, make it dirty!
+    if (r.status === "occupied" && checkOutRooms.includes(num) && currentMinutes >= 600) {
+      r.status = "dirty";
+      r.label = "Dirty";
+    }
+
+    // 12:00 PM Check-in: If room is ready, make it occupied!
+    if (r.status === "ready" && currentMinutes >= 720) {
+      r.status = "occupied";
+      r.label = "Occupied";
     }
   });
 

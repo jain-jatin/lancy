@@ -13,8 +13,6 @@ export interface Room {
   note?: string;
   flagged?: boolean;
   priority?: string;
-  guestArrival?: string;
-  earlyCheckIn?: boolean;
   damageReported?: boolean;
   tvIssue?: boolean;
   isBlocked?: boolean;

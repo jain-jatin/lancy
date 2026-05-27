@@ -9,9 +9,6 @@ export function RoomChip({ room, onClick }: { room: Room & { damageReported?: bo
     >
       <div className="w-full flex items-center justify-between px-1 shrink-0">
         <span className="text-[8px] font-bold text-muted-foreground tracking-wider uppercase">{room.type}</span>
-        {room.earlyCheckIn && (
-          <Zap size={10} className="text-[#F59E0B] fill-[#F59E0B]" />
-        )}
       </div>
 
       <span className="text-[17px] font-bold text-[#1A1A2E] leading-none my-1">{room.number}</span>

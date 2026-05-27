@@ -71,8 +71,6 @@ export const dbOperations = {
       note: r.note,
       flagged: r.flagged,
       priority: r.priority,
-      guestArrival: r.guest_arrival,
-      earlyCheckIn: r.early_check_in,
     }));
   },
 
@@ -197,7 +195,6 @@ export const dbOperations = {
       const isContinuing = continuingRooms.includes(r.number);
       const stayType = isContinuing ? 'continuing stay' : 'checkout';
       const flags: string[] = [];
-      if (r.earlyCheckIn) flags.push('EARLY CHECK-IN');
       if (r.damageReported) flags.push('DAMAGE REPORTED');
       if (r.note) flags.push(`MAINTENANCE: ${r.note}`);
       if (r.status === 'blocked') flags.push('BLOCKED');

@@ -15,9 +15,6 @@ export const supervisorAgent = {
       .filter(r => r.status === "dirty" && !r.attendant)
       .sort((a, b) => {
         const typeOrder = { STE: 0, DLX: 1, STD: 2 };
-        const earlyA = a.earlyCheckIn ? 1 : 0;
-        const earlyB = b.earlyCheckIn ? 1 : 0;
-        if (earlyA !== earlyB) return earlyB - earlyA;
         return typeOrder[a.type] - typeOrder[b.type];
       });
 
@@ -62,7 +59,6 @@ export const supervisorAgent = {
       unassigned.slice(0, available.length).forEach((room, i) => {
         const hk = available[i];
         let recLine = `Room ${room.number} (${room.type}, Floor ${room.floor})`;
-        if (room.earlyCheckIn) recLine += `, EARLY CHECK-IN`;
         recLine += `\nRecommended: ${hk.name}\n\n`;
         msg += recLine;
         recommendations.push({ roomNumber: room.number, hkName: hk.name });
@@ -160,9 +156,9 @@ export const supervisorAgent = {
             return `  Room ${roomNum} (${roomType}): Done`;
           }
 
-          // If room is occupied and does not have earlyCheckIn requested, we must not start before 10:00 AM (600 mins)
+          // If room is occupied, we must not start before 10:00 AM (600 mins)
           let scheduledStart = cursor;
-          if (status === "occupied" && !room?.earlyCheckIn && !isContinuingStay) {
+          if (status === "occupied" && !isContinuingStay) {
             if (cursor < 600) {
               scheduledStart = 600; // Delay to standard 10:00 AM checkout
             }
@@ -185,7 +181,7 @@ export const supervisorAgent = {
             // Checkout room: inspection + cleaning
             const totalDuration = inspectionDuration + (cleaningDurations[roomType] || 25);
             cursor = scheduledStart + totalDuration;
-            const earlyFlag = room?.earlyCheckIn ? " (Priority Early Checkout)" : " (Standard Checkout at 10:00 AM)";
+            const earlyFlag = " (Standard Checkout at 10:00 AM)";
             return `  Room ${roomNum} (${roomType}, checkout): starts ${startTimeStr}${earlyFlag}`;
           }
         });
@@ -194,7 +190,7 @@ export const supervisorAgent = {
       }).join("\n\n");
 
       return {
-        reply: `Today's Room Turnarounds Schedule:\n\n${scheduleLines}\n\nI have structured this smart turnaround plan based on guest checkout requests and housekeeper availability. Early checkout rooms are scheduled immediately upon housekeeper arrival. Standard checkouts are delayed until the 10:00 AM checkout window to avoid disturbing guests.\n\nWould you like me to auto-assign these schedules now?`,
+        reply: `Today's Room Turnarounds Schedule:\n\n${scheduleLines}\n\nI have structured this smart turnaround plan based on guest checkout schedules and housekeeper availability. Standard checkouts are scheduled at the 10:00 AM checkout window to avoid disturbing guests.\n\nWould you like me to auto-assign these schedules now?`,
         buttons: [
           { label: "Yes, auto-assign schedule", textToSend: "Yes, auto-assign schedule" },
           { label: "I will review first", textToSend: "Show rooms" }
@@ -250,18 +246,17 @@ export const supervisorAgent = {
     if (cleanMsg.includes("next priority") || cleanMsg.includes("deluxe") || cleanMsg.includes("priority")) {
       const dlxRooms = rooms.filter(r => (r.type === 'DLX' || r.type === 'STE') && r.status !== 'ready' && r.status !== 'occupied');
       
-      // Sort deluxe rooms: early check-in or priority first
+      // Sort deluxe rooms: priority first
       dlxRooms.sort((a, b) => {
-        const priorityA = a.earlyCheckIn || a.priority ? 1 : 0;
-        const priorityB = b.earlyCheckIn || b.priority ? 1 : 0;
+        const priorityA = a.priority ? 1 : 0;
+        const priorityB = b.priority ? 1 : 0;
         return priorityB - priorityA;
       });
 
       const priorityLines = dlxRooms.map(r => {
         const hkStr = r.attendant ? `${r.attendant} is assigned` : 'Unassigned';
-        const earlyStr = r.earlyCheckIn ? ' (Priority Early Arrival)' : '';
         const statusLabel = r.status.charAt(0).toUpperCase() + r.status.slice(1);
-        return `- **Room ${r.number}** (${r.type}): ${statusLabel}. ${hkStr}${earlyStr}.`;
+        return `- **Room ${r.number}** (${r.type}): ${statusLabel}. ${hkStr}.`;
       }).join("\n");
 
       return {

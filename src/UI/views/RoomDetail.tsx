@@ -98,7 +98,6 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
               <div className="mt-4 space-y-2">
                 {room.startedAt && <InfoRow label="Started" value={room.startedAt} />}
                 {room.elapsed !== undefined && <InfoRow label="Elapsed" value={`${room.elapsed} min · avg 25`} />}
-                {room.guestArrival && <InfoRow label="Guest arrives" value={room.guestArrival} />}
                 {room.priority && <InfoRow label="Priority" value={room.priority} />}
               </div>
 

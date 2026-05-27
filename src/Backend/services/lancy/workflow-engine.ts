@@ -78,10 +78,8 @@ export const workflowEngine = {
       return;
     }
 
-    // Room priority calculation helper
     const getPriorityScore = (room: Room) => {
       const isContinuing = continuingRooms.includes(room.number);
-      if (room.earlyCheckIn) return 3;
       if (!isContinuing) return 2; // standard checkout
       return 1; // continuing stayover
     };
