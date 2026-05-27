@@ -247,59 +247,31 @@ export const supervisorAgent = {
       };
     }
 
-    // TRACK 2 - Gemini Freeform Queries
-    const systemPrompt = `
-You are Lancy, AI operations partner for Marcus, 
-housekeeping supervisor at Maplewood Suites.
-Current simulation time: ${simTime}.
-
-ROOM STATES:
-${rooms.map(r => {
-  const hk = r.attendant || 'Unassigned'
-  const flags = [
-    r.earlyCheckIn ? 'EARLY CHECK-IN' : null,
-    r.damageReported ? 'DAMAGE REPORTED' : null,
-    r.note ? `MAINTENANCE: ${r.note}` : null,
-    r.status === 'blocked' ? 'BLOCKED' : null
-  ].filter(Boolean).join(' | ')
-  return `Room ${r.number} (${r.type} Fl${r.floor}): ${r.status}, Attendant: ${hk}${flags ? ' [' + flags + ']' : ''}`
-}).join('\n')}
-
-HOUSEKEEPER STATUS:
-${housekeepers.map(hk => {
-  const arrTime = dbOperations.hkArrivals[hk.name] || '08:00';
-  if (arrTime > simTime) return `${hk.name}: NOT YET ARRIVED (arrives ${arrTime})`
-  if (!hk.current_room) return `${hk.name}: IDLE (available)`
-  return `${hk.name}: ${hk.current_activity} in Room ${hk.current_room}`
-}).join('\n')}
-
-PENDING REVIEWS:
-${rooms.filter(r => r.status === 'review').map(r =>
-  `Room ${r.number} (${r.type}), waiting 5m`
-).join('\n') || 'None'}
-
-RULES:
-- Never use em dashes (—) or double hyphens (--) in your replies. Use commas, colons, or parentheses instead.
-- Respond in 2 sentences maximum unless building a full plan.
-- If asked for room states or status, list every room with its current status.
-- Never mark a room READY without Marcus confirming.
-- Never assign a housekeeper without Marcus confirming.
-- If a room is overdue flag it with the word OVERDUE.
-- Stay focused on housekeeping operations only.
-- Language: English only.
-`;
-
+    // TRACK 2 - Gemini Freeform Queries (fresh DB data + conversation history on EVERY call)
     const genAI = apiClient.getGeminiClient();
     if (genAI) {
       try {
+        const systemPrompt = await dbOperations.buildLiveSystemPrompt(simTime, { role: 'supervisor' });
         const model = genAI.getGenerativeModel({
           model: "gemini-1.5-flash",
           tools: [{ functionDeclarations: LANCY_TOOLS }],
           systemInstruction: systemPrompt,
           generationConfig: { temperature: 0.0 }
         });
-        const result = await model.generateContent(message);
-        const response = await result.response;
+
+        // Build conversation history from message store
+        const allMessages = await dbOperations.getMessages();
+        const supervisorMessages = allMessages.filter(m =>
+          (m.role === 'supervisor') || (m.role === 'lancy' && m.sender === 'Lancy')
+        );
+        const history = supervisorMessages.slice(-10).map(m => ({
+          role: m.role === 'supervisor' ? 'user' as const : 'model' as const,
+          parts: [{ text: m.content }]
+        }));
+
+        const chat = model.startChat({ history });
+        const result = await chat.sendMessage(message);
+        const response = result.response;
         
         let reply = "";
         const parts = response.candidates?.[0]?.content?.parts || [];
@@ -326,12 +298,13 @@ RULES:
 
     // Offline fallback: build a useful summary instead of a generic message
     const dirtyCount = rooms.filter(r => r.status === "dirty").length;
-    const cleaningCount = rooms.filter(r => r.status === "cleaning" || r.status === "inspection").length;
+    const inspectionCount = rooms.filter(r => r.status === "inspection").length;
+    const cleaningCount = rooms.filter(r => r.status === "cleaning").length;
     const reviewCount = rooms.filter(r => r.status === "review").length;
     const readyCount = rooms.filter(r => r.status === "ready").length;
     const blockedCount = rooms.filter(r => r.status === "blocked").length;
 
-    let fallback = `At ${simTime}: ${dirtyCount} dirty, ${cleaningCount} in progress, ${reviewCount} pending review, ${readyCount} ready`;
+    let fallback = `At ${simTime}: ${dirtyCount} dirty, ${inspectionCount} inspecting, ${cleaningCount} cleaning, ${reviewCount} pending review, ${readyCount} ready`;
     if (blockedCount > 0) fallback += `, ${blockedCount} blocked`;
     fallback += ".\n\nTry asking: \"current state of all rooms\", \"where is everyone\", \"room turnarounds\", or \"next priority\".";
 

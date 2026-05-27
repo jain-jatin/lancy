@@ -75,41 +75,14 @@ export const housekeeperAgent = {
       return `Hi ${hk.name}, I'm monitoring Room ${hk.current_room || 'your assignment'}. Let me know if you need help!`;
     };
 
-    // TRACK 2 - Gemini Housekeeper LLM Chat
-    const buildFullHousekeeperContext = (housekeeper: Housekeeper, allRooms: Room[], simTime: string) => `
-  You are Lancy. You are speaking with ${housekeeper.name}.
-  
-  WHAT YOU KNOW ABOUT ${housekeeper.name.toUpperCase()}:
-  Status: ${housekeeper.status || 'PRESENT'} (PRESENT / ABSENT / IDLE / INSPECTION / CLEANING)
-  Current room: ${housekeeper.current_room || 'none'}
-  Current activity: ${housekeeper.current_activity || 'idle'}
-  Rooms completed today: ${(housekeeper.rooms_completed || []).join(', ') || 'none yet'}
-  Remaining queue: ${(housekeeper.rooms || []).filter(r => !(housekeeper.rooms_completed || []).includes(r)).join(', ') || 'all done'}
-  
-  FULL HOTEL CONTEXT:
-  Simulation time: ${simTime}
-  Total rooms ready: ${allRooms.filter(r => r.status === 'ready').length}
-  Total rooms remaining: ${allRooms.filter(r => r.status !== 'ready' && r.status !== 'occupied').length}
-  
-  YOU ALWAYS KNOW:
-  - Which room ${housekeeper.name} is currently in (no need for them to tell you)
-  - What task they are doing (inspection or cleaning)
-  - What their next room is
-  - How long they have been in the current room
-  - Whether they are running on time or behind
-  
-  NEVER ask ${housekeeper.name} which room they are in.
-  NEVER ask them what they are doing.
-  You already know. Reference it naturally in responses.
-  
-  Example: if James says "found something here"
-  You say: "Got it, logging that for Room 303." 
-  Not: "Which room are you in?"
-`;
+    // TRACK 2 - Gemini Housekeeper LLM Chat (fresh DB data + conversation history on EVERY call)
+    const genAI = apiClient.getGeminiClient();
+    if (genAI) {
+      try {
+        const systemPrompt = await dbOperations.buildLiveSystemPrompt('10:00', { role: 'housekeeper', hkName: hkName });
 
-    const systemPrompt = `
-${buildFullHousekeeperContext(hk, rooms, '10:00')}
-
+        // Add housekeeper-specific intent instructions
+        const fullPrompt = systemPrompt + `
 INTENT DETECTION: use tools based on these instructions:
 
 1. ITEMS CONFIRMED / ALL CLEAR:
@@ -141,21 +114,31 @@ INTENT DETECTION: use tools based on these instructions:
    Action: If they are sick or cannot come, set their status to ABSENT. Respond with "I am sorry to hear that. I hope you feel better soon. I have let Marcus know and will sort out your rooms."
 
 NEVER fabricate room numbers. Always use the room from the database.
-Never use em dashes (—) or double hyphens (--) in your replies. Use commas, colons, or parentheses instead.
+Never use em dashes or double hyphens. Use commas, colons, or parentheses instead.
 Respond in 2 sentences maximum.
 `;
 
-    const genAI = apiClient.getGeminiClient();
-    if (genAI) {
-      try {
         const model = genAI.getGenerativeModel({
           model: "gemini-1.5-flash",
           tools: [{ functionDeclarations: LANCY_TOOLS }],
-          systemInstruction: systemPrompt,
+          systemInstruction: fullPrompt,
           generationConfig: { temperature: 0.0 }
         });
-        const result = await model.generateContent(text);
-        const response = await result.response;
+
+        // Build conversation history from message store
+        const allMessages = await dbOperations.getMessages();
+        const hkMessages = allMessages.filter(m =>
+          (m.sender === hkName && m.role === 'hk') ||
+          (m.role === 'lancy' && m.sender === 'Lancy')
+        );
+        const history = hkMessages.slice(-10).map(m => ({
+          role: m.role === 'hk' ? 'user' as const : 'model' as const,
+          parts: [{ text: m.content }]
+        }));
+
+        const chat = model.startChat({ history });
+        const result = await chat.sendMessage(text);
+        const response = result.response;
         
         let reply = "";
         const parts = response.candidates?.[0]?.content?.parts || [];
