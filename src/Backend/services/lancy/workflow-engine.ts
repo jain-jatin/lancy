@@ -1,6 +1,8 @@
 import { Room, Housekeeper } from "@/simulation/data";
 import { dbOperations } from "./db-operations";
 import { apiClient } from "./api-client";
+import { continuingRooms } from "@/simulation/engine";
+import { supabase, isRealSupabaseConfigured, mockDb } from "../../db/supabase";
 
 export const workflowEngine = {
   async assignHousekeeperRoom(hkName: string, roomNum: string) {
@@ -47,6 +49,162 @@ export const workflowEngine = {
       await dbOperations.updateHousekeeper(hkName, updates);
     }
     await dbOperations.updateRoomStatus(completedRoom, "review", { attendant: hkName });
+  },
+
+  /**
+   * Handle sick leaves/absences deterministically:
+   * 1. Set the housekeeper status to ABSENT.
+   * 2. Find all non-completed rooms assigned to them.
+   * 3. Sort them by priority: earlyCheckIn > standard checkout > continuing stayover.
+   * 4. Allocate round-robin to other active housekeepers based on lowest active workloads.
+   * 5. Keep active housekeepers' current rooms untouched (they finish what they're doing first),
+   *    but prioritize their entire remaining queues.
+   * 6. Notify Marcus immediately with an URGENT feed card.
+   */
+  async handleHousekeeperAbsence(hkName: string) {
+    const rooms = await dbOperations.getRooms();
+    const housekeepers = await dbOperations.getHousekeepers();
+
+    // Find active (present) housekeepers
+    const activeHousekeepers = housekeepers.filter(h => h.name !== hkName && h.status !== "ABSENT");
+    if (activeHousekeepers.length === 0) {
+      console.warn("No active housekeepers available for reassignment.");
+      return;
+    }
+
+    // Find all incomplete rooms assigned to the sick housekeeper
+    const sickHkRooms = rooms.filter(r => r.attendant === hkName && r.status !== "ready" && r.status !== "occupied");
+    if (sickHkRooms.length === 0) {
+      return;
+    }
+
+    // Room priority calculation helper
+    const getPriorityScore = (room: Room) => {
+      const isContinuing = continuingRooms.includes(room.number);
+      if (room.earlyCheckIn) return 3;
+      if (!isContinuing) return 2; // standard checkout
+      return 1; // continuing stayover
+    };
+
+    // Sort rooms by priority score (descending), then room number (ascending)
+    const sortedRooms = [...sickHkRooms].sort((a, b) => {
+      const priA = getPriorityScore(a);
+      const priB = getPriorityScore(b);
+      if (priA !== priB) return priB - priA;
+      return a.number.localeCompare(b.number);
+    });
+
+    // Distribute rooms one by one to active housekeepers with the lowest pending loads
+    for (const room of sortedRooms) {
+      const currentRooms = await dbOperations.getRooms();
+      const currentHks = await dbOperations.getHousekeepers();
+
+      const hkLoads = currentHks
+        .filter(h => h.name !== hkName && h.status !== "ABSENT")
+        .map(h => {
+          const pendingCount = currentRooms.filter(r => r.attendant === h.name && r.status !== "ready" && r.status !== "occupied").length;
+          return { name: h.name, pendingCount };
+        });
+
+      if (hkLoads.length === 0) break;
+
+      // Select housekeeper with the absolute lowest load
+      hkLoads.sort((a, b) => a.pendingCount - b.pendingCount);
+      const bestHkName = hkLoads[0].name;
+
+      const targetHk = currentHks.find(h => h.name === bestHkName)!;
+      const updatedRooms = [...(targetHk.rooms || [])];
+      if (!updatedRooms.includes(room.number)) {
+        updatedRooms.push(room.number);
+      }
+
+      // Reassign attendant on room
+      await dbOperations.updateRoomStatus(room.number, room.status, { attendant: bestHkName });
+
+      // Update housekeeper's assigned rooms
+      await dbOperations.updateHousekeeper(bestHkName, { rooms: updatedRooms });
+    }
+
+    // Prioritize the queue for each active housekeeper
+    const finalRooms = await dbOperations.getRooms();
+    const finalHks = await dbOperations.getHousekeepers();
+
+    for (const hk of finalHks) {
+      if (hk.name === hkName || hk.status === "ABSENT") continue;
+
+      const assignedRoomNums = hk.rooms || [];
+      if (assignedRoomNums.length === 0) continue;
+
+      const activeRoomNum = hk.current_room;
+
+      // Collect all incomplete assigned rooms excluding the one they are actively in the middle of
+      const pendingRooms = finalRooms.filter(r => 
+        assignedRoomNums.includes(r.number) && 
+        r.number !== activeRoomNum && 
+        r.status !== "ready" && 
+        r.status !== "occupied"
+      );
+
+      const sortedPending = [...pendingRooms].sort((a, b) => {
+        const priA = getPriorityScore(a);
+        const priB = getPriorityScore(b);
+        if (priA !== priB) return priB - priA;
+        return a.number.localeCompare(b.number);
+      });
+
+      // Clean, prioritized room list: completed -> current active -> sorted pending
+      const sortedRoomNums = [
+        ...(hk.rooms_completed || []),
+        ...(activeRoomNum ? [activeRoomNum] : []),
+        ...sortedPending.map(r => r.number)
+      ];
+      const uniqueRoomNums = Array.from(new Set(sortedRoomNums));
+
+      const updates: Partial<Housekeeper> = {
+        rooms: uniqueRoomNums
+      };
+
+      // If housekeeper is idle, start their active/next room pointers immediately
+      if (!hk.current_room && sortedPending.length > 0) {
+        updates.current_room = sortedPending[0].number;
+        updates.current_activity = "INSPECTION";
+        updates.next_room = sortedPending.length > 1 ? sortedPending[1].number : null;
+        await dbOperations.updateRoomStatus(sortedPending[0].number, "dirty", { attendant: hk.name });
+      } else if (hk.current_room && sortedPending.length > 0) {
+        updates.next_room = sortedPending[0].number;
+      } else if (sortedPending.length === 0) {
+        updates.next_room = null;
+      }
+
+      await dbOperations.updateHousekeeper(hk.name, updates);
+    }
+
+    // Notify Marcus via URGENT supervisor card
+    const reassignSummary = sortedRooms.map(r => `Room ${r.number}`).join(", ");
+    const message = `${hkName} reported sick. All pending rooms (${reassignSummary}) have been automatically reassigned to ${activeHousekeepers.map(h => h.name).join(", ")} based on lowest workloads and prioritized by early check-ins/checkout status. Active queues have been refreshed.`;
+
+    if (isRealSupabaseConfigured) {
+      await supabase!
+        .from('supervisor_cards')
+        .insert({
+          card_type: 'URGENT',
+          room_number: sortedRooms[0]?.number || 'MULTIPLE',
+          title: `SICK CALL: ${hkName} Absent`,
+          message,
+          option_a: 'Acknowledge',
+          option_b: 'Review Schedule',
+          created_at: new Date()
+        });
+    } else {
+      mockDb.addSupervisorCard({
+        card_type: 'URGENT',
+        room_number: sortedRooms[0]?.number || 'MULTIPLE',
+        title: `SICK CALL: ${hkName} Absent`,
+        message,
+        option_a: 'Acknowledge',
+        option_b: 'Review Schedule',
+      });
+    }
   },
 
   async generateHousekeeperGreeting(hk: Housekeeper, rooms: Room[], simTime: string): Promise<string> {

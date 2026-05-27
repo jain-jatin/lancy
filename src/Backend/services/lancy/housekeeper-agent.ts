@@ -21,13 +21,17 @@ export const housekeeperAgent = {
     // 1. Add housekeeper message to message history so supervisor and cleaner views can see it
     await dbOperations.addMessage("hk", hkName, text);
 
+    // Immediate Deterministic Sick / Absence Check
+    if (cleanMsg.includes("sick") || cleanMsg.includes("cannot come") || cleanMsg.includes("not feeling well") || cleanMsg.includes("cannot make it") || cleanMsg.includes("won't be able") || cleanMsg.includes("can't make")) {
+      await dbOperations.updateHousekeeper(hk.name, { status: "ABSENT" });
+      await workflowEngine.handleHousekeeperAbsence(hk.name);
+      const reply = "I am sorry to hear that. I hope you feel better soon. I have let Marcus know and will sort out your rooms.";
+      await dbOperations.addMessage("lancy", "Lancy", reply);
+      return reply;
+    }
+
     // TRACK 1 - Deterministic Housekeeper Intent Matching Fallback
     const fallbackHandler = async () => {
-      if (cleanMsg.includes("sick") || cleanMsg.includes("cannot come") || cleanMsg.includes("not feeling well") || cleanMsg.includes("cannot make it") || cleanMsg.includes("won't be able") || cleanMsg.includes("can't make")) {
-        await dbOperations.updateHousekeeper(hk.name, { status: "ABSENT" });
-        return "I am sorry to hear that. I hope you feel better soon. I have let Marcus know and will sort out your rooms.";
-      }
-
       if (cleanMsg.includes("late") || cleanMsg.includes("running late")) {
         return `I will let Marcus know you are running late. Your rooms will wait for your arrival, and I'll help you check in.`;
       }
