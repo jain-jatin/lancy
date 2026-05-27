@@ -5,7 +5,6 @@ import { AppSelect } from "@/UI/components/AppSelect";
 import type { Room } from "@/simulation/data";
 
 const statusOptions = [
-  { value: "all", label: "Room Status" },
   { value: "all", label: "All" },
   { value: "dirty", label: "Dirty" },
   { value: "cleaning", label: "Cleaning" },
@@ -15,7 +14,6 @@ const statusOptions = [
 ];
 
 const hkOptions = [
-  { value: "all", label: "Housekeeper" },
   { value: "all", label: "All" },
   { value: "Marcus", label: "Marcus" },
   ...housekeepers.map((h) => ({ value: h.name, label: h.name })),
@@ -41,8 +39,8 @@ export function RoomsView({ onSelectRoom, roomsList }: { onSelectRoom: (r: Room)
     <div className="flex-1 overflow-y-auto bg-background">
       {/* Both dropdowns on one line, separated from grid by border */}
       <div className="px-4 pt-4 pb-3 flex items-center gap-2 border-b border-border bg-white">
-        <AppSelect value={filter} onChange={setFilter} options={statusOptions} />
-        <AppSelect value={hkFilter} onChange={setHkFilter} options={hkOptions} />
+        <AppSelect value={filter} onChange={setFilter} options={statusOptions} placeholder="Room Status" />
+        <AppSelect value={hkFilter} onChange={setHkFilter} options={hkOptions} placeholder="Housekeeper" />
       </div>
 
       <div className="px-4 pt-4 pb-4 space-y-5">

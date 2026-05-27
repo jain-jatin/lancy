@@ -12,13 +12,15 @@ interface Props {
   options: SelectOption[];
   className?: string;
   headerVariant?: boolean;
+  placeholder?: string;
 }
 
-export function AppSelect({ value, onChange, options, className = "", headerVariant = false }: Props) {
+export function AppSelect({ value, onChange, options, className = "", headerVariant = false, placeholder }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   const selected = options.find((o) => o.value === value) ?? options[0];
+  const displayText = (value === "all" && placeholder) ? placeholder : selected.label;
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -44,7 +46,7 @@ export function AppSelect({ value, onChange, options, className = "", headerVari
         onClick={() => setOpen((o) => !o)}
         className={triggerClass}
       >
-        <span>{selected.label}</span>
+        <span>{displayText}</span>
         <ChevronDown
           size={chevronSize}
           className={`text-muted-foreground transition-transform duration-150 ${open ? "rotate-180" : ""}`}
