@@ -62,9 +62,18 @@ export const workflowEngine = {
     const isMidTask = hk.current_room && (hk.current_activity === "INSPECTION" || hk.current_activity === "CLEANING");
 
     let estCompletionTime = simTime;
-    if (isMidTask) {
+    if (isMidTask && hk.current_room) {
+      const currentRoom = rooms.find(r => r.number === hk.current_room);
+      const roomType = currentRoom?.type || "STD";
       const currentMin = dbOperations.timeToMins(simTime);
-      const duration = hk.current_activity === "INSPECTION" ? 15 : 45;
+      
+      let duration = 15; // default for inspection
+      if (hk.current_activity === "CLEANING") {
+        if (roomType === "DLX") duration = 35;
+        else if (roomType === "STE") duration = 45;
+        else duration = 25; // STD
+      }
+      
       const targetMin = currentMin + duration;
       const targetHours = Math.floor(targetMin / 60) % 24;
       const targetMins = String(targetMin % 60).padStart(2, "0");
@@ -84,7 +93,7 @@ Tell them their task list in priority order.
 For each room include:
   - Room number and type
   - What the task is (Inspection or Cleaning)
-  - Target completion time (estimate based on current time or subsequent 45m slots)
+  - Target completion time (estimate based on actual database room type: Inspection is always 15 minutes, Cleaning is 25 minutes for STD, 35 minutes for DLX, 45 minutes for STE)
 
 Format example:
 "Good morning Ana! Here is your list for today:
@@ -127,17 +136,32 @@ After that: ${nextRoom ? 'Room ' + nextRoom.number : 'none'}.`;
     }
 
     let roomLines = "";
-    remainingRooms.forEach((r, idx) => {
-      const taskType = r.status === 'inspection' ? 'Inspection' : 'Cleaning';
-      const currentMin = dbOperations.timeToMins(simTime);
-      const targetMin = currentMin + (idx + 1) * 60;
-      const targetHours = Math.floor(targetMin / 60) % 24;
-      const targetMins = String(targetMin % 60).padStart(2, '0');
+    let accumulatedMins = dbOperations.timeToMins(simTime);
+
+    remainingRooms.forEach((r) => {
+      let duration = 0;
+      if (hk.current_room === r.number) {
+        if (hk.current_activity === "INSPECTION") {
+          const cleaningDuration = r.type === "STE" ? 45 : r.type === "DLX" ? 35 : 25;
+          duration = 10 + cleaningDuration; // remaining inspection + full cleaning
+        } else {
+          duration = 20; // remaining cleaning estimate
+        }
+      } else {
+        const cleaningDuration = r.type === "STE" ? 45 : r.type === "DLX" ? 35 : 25;
+        duration = 15 + cleaningDuration; // Full inspection (15m) + Cleaning
+      }
+
+      accumulatedMins += duration;
+      
+      const targetHours = Math.floor(accumulatedMins / 60) % 24;
+      const targetMins = String(accumulatedMins % 60).padStart(2, '0');
       const ampm = targetHours >= 12 ? 'PM' : 'AM';
       const displayHours = targetHours % 12 || 12;
       const targetTimeStr = `${displayHours}:${targetMins} ${ampm}`;
 
-      roomLines += `Room ${r.number} (${r.type}): ${taskType}, finish by ${targetTimeStr}\n`;
+      const taskType = r.status === 'inspection' ? 'Inspection' : 'Cleaning';
+      roomLines += `Room ${r.number} (${r.type}) - ${taskType} - finish by ${targetTimeStr}\n`;
     });
 
     return `Good morning ${hk.name}! Here is your list for today:
