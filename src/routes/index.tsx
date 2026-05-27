@@ -27,6 +27,8 @@ type Step =
 interface ChatItem { id: string; render: () => React.ReactNode }
 
 const timePills = [
+  { value: "07:00", label: "7:00 AM" },
+  { value: "07:30", label: "7:30 AM" },
   { value: "08:00", label: "8:00 AM" },
   { value: "08:30", label: "8:30 AM" },
   { value: "09:00", label: "9:00 AM" },
@@ -74,8 +76,8 @@ function LancyApp() {
     ]]))
   );
 
-  const [selectedTime, setSelectedTime] = useState("08:00");
-  const [simState, setSimState] = useState(() => compileSimulation("08:00"));
+  const [selectedTime, setSelectedTime] = useState("07:00");
+  const [simState, setSimState] = useState(() => compileSimulation("07:00"));
   const roomsList = Object.values(simState.rooms);
 
   // Proactive greeting on selection change
@@ -466,7 +468,7 @@ function LancyApp() {
     ];
 
     // Push action buttons for the simulation time
-    if (time === "08:00") {
+    if (time === "07:00" || time === "08:00") {
       newExtra.push({
         id: "simulate-action-08",
         render: () => (

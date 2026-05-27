@@ -30,9 +30,9 @@ export const supervisorAgent = {
     // Find pending reviews
     const reviews = rooms.filter(r => r.status === "review");
 
-    if (simulationTime === "08:00") {
+    if (currentMins <= dbOperations.timeToMins("08:00")) {
       return {
-        msg: `Good morning, Marcus! Shift starting.\n\nHere is today's overview. We have 15 checkouts to handle and 5 housekeepers scheduled today.\n\nWould you like to see today's shift summary or review assignments?`,
+        msg: `Good morning, Marcus! Shift starting at ${simulationTime}.\n\nHere is today's overview. We have 15 checkouts to handle and 5 housekeepers scheduled today.\n\nWould you like to see today's shift summary or review assignments?`,
         recommendations: []
       };
     }
