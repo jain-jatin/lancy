@@ -326,5 +326,52 @@ After that: ${nextRoom ? 'Room ' + nextRoom.number : 'none'}.`;
 
 ${roomLines}
 Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
+  },
+
+  async autoAssignAllSchedules() {
+    const rooms = await dbOperations.getRooms();
+    const housekeepers = await dbOperations.getHousekeepers();
+    
+    const housekeeperAssignments: Record<string, string[]> = {
+      Ana: ["201", "202", "203", "502"],
+      Rosa: ["204", "205", "301", "404"],
+      James: ["302", "303", "304"],
+      Priya: ["305", "401", "402", "405"],
+      Sofia: ["403", "503", "505"],
+    };
+
+    for (const hkName of Object.keys(housekeeperAssignments)) {
+      const assignedRooms = housekeeperAssignments[hkName];
+      for (const roomNum of assignedRooms) {
+        const room = rooms.find(r => r.number === roomNum);
+        if (room && !room.attendant) {
+          // Assign attendant to the room
+          await dbOperations.updateRoomStatus(roomNum, room.status, { attendant: hkName });
+        }
+      }
+    }
+
+    // Also update current_room and next_room pointers for idle housekeepers
+    const freshRooms = await dbOperations.getRooms();
+    const freshHks = await dbOperations.getHousekeepers();
+    for (const hk of freshHks) {
+      if (hk.status === "ABSENT") continue;
+      const assignedRoomNums = housekeeperAssignments[hk.name] || [];
+      const pendingRooms = freshRooms.filter(r => 
+        assignedRoomNums.includes(r.number) && 
+        r.status !== "ready" && 
+        r.status !== "occupied"
+      );
+
+      if (!hk.current_room && pendingRooms.length > 0) {
+        const updates: Partial<Housekeeper> = {
+          current_room: pendingRooms[0].number,
+          current_activity: "INSPECTION",
+          next_room: pendingRooms.length > 1 ? pendingRooms[1].number : null
+        };
+        await dbOperations.updateHousekeeper(hk.name, updates);
+        await dbOperations.updateRoomStatus(pendingRooms[0].number, "dirty", { attendant: hk.name });
+      }
+    }
   }
 };

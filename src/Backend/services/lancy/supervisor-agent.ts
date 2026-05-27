@@ -129,6 +129,14 @@ export const supervisorAgent = {
       };
     }
 
+    if (cleanMsg.includes("yes, auto-assign schedule") || cleanMsg.includes("auto-assign schedule")) {
+      await workflowEngine.autoAssignAllSchedules();
+      return {
+        reply: "Done! I have auto-assigned all 15 checkout rooms to the housekeepers based on their schedules and guest checkout times. Attendants have been notified on their devices and their active queues have been initialized.",
+        buttons: []
+      };
+    }
+
     if (cleanMsg.includes("room turnarounds") || cleanMsg.includes("turnarounds") || cleanMsg.includes("go to room turnarounds")) {
       const cleaningDurations: Record<string, number> = { STD: 25, DLX: 35, STE: 45 };
       const inspectionDuration = 15;
@@ -152,8 +160,16 @@ export const supervisorAgent = {
             return `  Room ${roomNum} (${roomType}): Done`;
           }
 
-          const startH = Math.floor(cursor / 60) % 24;
-          const startM = String(cursor % 60).padStart(2, "0");
+          // If room is occupied and does not have earlyCheckIn requested, we must not start before 10:00 AM (600 mins)
+          let scheduledStart = cursor;
+          if (status === "occupied" && !room?.earlyCheckIn && !isContinuingStay) {
+            if (cursor < 600) {
+              scheduledStart = 600; // Delay to standard 10:00 AM checkout
+            }
+          }
+
+          const startH = Math.floor(scheduledStart / 60) % 24;
+          const startM = String(scheduledStart % 60).padStart(2, "0");
           const ampm = startH >= 12 ? "PM" : "AM";
           const displayH = startH % 12 || 12;
           const startTimeStr = `${displayH}:${startM} ${ampm}`;
@@ -161,15 +177,16 @@ export const supervisorAgent = {
           if (isContinuingStay) {
             // Continuing stay: cleaning only, no inspection
             const cleanDuration = cleaningDurations[roomType] || 25;
-            const isEarlyCleaning = cursor < stayoverWindow.start || cursor >= stayoverWindow.end;
-            const earlyFlag = isEarlyCleaning ? ", early cleaning requested" : "";
-            cursor += cleanDuration;
-            return `  Room ${roomNum} (${roomType}, continuing stay): cleaning ${startTimeStr}${earlyFlag}`;
+            const isEarlyCleaning = scheduledStart < stayoverWindow.start || scheduledStart >= stayoverWindow.end;
+            const earlyFlag = isEarlyCleaning ? " (early stayover cleaning)" : "";
+            cursor = scheduledStart + cleanDuration;
+            return `  Room ${roomNum} (${roomType}, stayover): starts ${startTimeStr}${earlyFlag}`;
           } else {
             // Checkout room: inspection + cleaning
             const totalDuration = inspectionDuration + (cleaningDurations[roomType] || 25);
-            cursor += totalDuration;
-            return `  Room ${roomNum} (${roomType}, checkout): starts ${startTimeStr}`;
+            cursor = scheduledStart + totalDuration;
+            const earlyFlag = room?.earlyCheckIn ? " (Priority Early Checkout)" : " (Standard Checkout at 10:00 AM)";
+            return `  Room ${roomNum} (${roomType}, checkout): starts ${startTimeStr}${earlyFlag}`;
           }
         });
 
@@ -177,8 +194,11 @@ export const supervisorAgent = {
       }).join("\n\n");
 
       return {
-        reply: `Today's Room Turnarounds Schedule:\n\n${scheduleLines}`,
-        buttons: []
+        reply: `Today's Room Turnarounds Schedule:\n\n${scheduleLines}\n\nI have structured this smart turnaround plan based on guest checkout requests and housekeeper availability. Early checkout rooms are scheduled immediately upon housekeeper arrival. Standard checkouts are delayed until the 10:00 AM checkout window to avoid disturbing guests.\n\nWould you like me to auto-assign these schedules now?`,
+        buttons: [
+          { label: "Yes, auto-assign schedule", textToSend: "Yes, auto-assign schedule" },
+          { label: "I will review first", textToSend: "Show rooms" }
+        ]
       };
     }
 
