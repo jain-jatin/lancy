@@ -90,7 +90,7 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
                 <div className="flex-1">
                   <div className="font-semibold text-[14px]">{hk.name}</div>
                   <div className="text-[12px] text-muted-foreground">
-                    {room.status === "cleaning" ? "Cleaning in progress" : room.status === "review" ? "Awaiting review" : ""}
+                    {room.status === "cleaning" ? "Cleaning in progress" : room.status === "review" ? "Cleaning complete · Awaiting supervisor review" : ""}
                   </div>
                 </div>
               </div>

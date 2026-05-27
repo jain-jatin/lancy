@@ -475,12 +475,6 @@ function LancyApp() {
         render: () => (
           <div className="flex flex-wrap gap-2 pt-1 animate-fade-in">
             <button
-              onClick={() => onSend("Yes, please")}
-              className="h-9 px-4 rounded-full border border-emerald-600 bg-white text-[13px] font-semibold text-emerald-700 active:bg-emerald-50 hover:bg-emerald-50 transition-all shadow-sm"
-            >
-              Show shift summary
-            </button>
-            <button
               onClick={() => onSend("room turnarounds")}
               className="h-9 px-4 rounded-full border border-amber-600 bg-white text-[13px] font-semibold text-amber-700 active:bg-amber-50 hover:bg-amber-50 transition-all shadow-sm"
             >
