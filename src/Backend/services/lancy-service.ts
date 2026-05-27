@@ -1,13 +1,16 @@
 import { apiClient } from "./lancy/api-client";
 import { dbOperations } from "./lancy/db-operations";
 import { workflowEngine } from "./lancy/workflow-engine";
-import { intelligentAgent, LANCY_TOOLS, executeTool } from "./lancy/intelligent-agent";
+import { supervisorAgent } from "./lancy/supervisor-agent";
+import { housekeeperAgent } from "./lancy/housekeeper-agent";
+import { executeTool, LANCY_TOOLS } from "./lancy/tools";
 
 export const lancyService = {
   ...apiClient,
   ...dbOperations,
   ...workflowEngine,
-  ...intelligentAgent,
+  ...supervisorAgent,
+  ...housekeeperAgent,
 };
 
 export { LANCY_TOOLS, executeTool };
