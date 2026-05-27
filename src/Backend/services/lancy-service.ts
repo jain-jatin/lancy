@@ -444,43 +444,24 @@ Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
       cleanMsg.includes("show me my team")
     ) {
       const hkLines = housekeepers.map((hk) => {
-        const namePad = hk.name.padEnd(10, " ");
         const arrTime = lancyService.hkArrivals[hk.name] || "08:00";
+        if (hk.status === "ABSENT") {
+          return `${hk.name}: ABSENT`;
+        }
         if (currentMins < lancyService.timeToMins(arrTime)) {
-          return `${namePad}NOT ARRIVED  Expected ${arrTime}`;
+          return `${hk.name}: NOT ARRIVED Expected ${arrTime}`;
         }
         if (!hk.current_room) {
-          const lastFinished = hk.rooms_completed && hk.rooms_completed.length > 0 
-            ? hk.rooms_completed[hk.rooms_completed.length - 1] 
-            : null;
-          let idleStr = `IDLE         `;
-          if (lastFinished) {
-            idleStr += `Finished ${lastFinished}. `;
-          }
-          if (hk.next_room) {
-            idleStr += `Next: ${hk.next_room}`;
-          } else {
-            idleStr += `Available`;
-          }
-          return `${namePad}${idleStr}`;
+          return `${hk.name}: FREE`;
         }
-        const room = rooms.find(r => r.number === hk.current_room);
-        const typeStr = room ? ` (${room.type} Fl${room.floor})` : "";
-        const activityStr = hk.current_activity === "INSPECTION" ? "Inspecting   " : "Cleaning     ";
-        const elapsedStr = room && room.elapsed ? `   Elapsed ${room.elapsed}m` : "   Elapsed 10m";
-        const startedAtStr = room && room.startedAt ? `   Started ${room.startedAt}` : "";
-        return `${namePad}${activityStr}Room ${hk.current_room}${typeStr}${startedAtStr}${elapsedStr}`;
+        const activityStr = hk.current_activity === "INSPECTION" ? "Inspecting" : "Cleaning";
+        return `${hk.name}: ${activityStr} Room ${hk.current_room}`;
       });
       
-      const pendingReviews = rooms.filter(r => r.status === "inspection").map(r => r.number).join(", ");
-      const reply = `Here is your team right now:\n\n` + 
-        hkLines.join("\n") + 
-        `\n\n` + 
-        (pendingReviews ? `Pending your review: Room ${pendingReviews}` : "No pending reviews");
+      const reply = hkLines.join("\n");
       
       return {
         reply,
-        card: { action: "map-card" },
         buttons: []
       };
     }
@@ -488,7 +469,7 @@ Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
     // TRACK 1 - Deterministic start & workflows
     if (cleanMsg.includes("start shift") || cleanMsg.includes("start")) {
       return {
-        reply: "Good morning, Marcus. Would you like to see the summary of today's checkouts and checkins?",
+        reply: "Good morning, Marcus. Would you like to see today's room turnarounds?",
         buttons: [
           { label: "Yes, please", textToSend: "Yes, please" }
         ]
@@ -497,7 +478,7 @@ Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
 
     if (cleanMsg.includes("yes, please") || cleanMsg.includes("yes please")) {
       return {
-        reply: "Here is today's shift summary:",
+        reply: "Here is today's room turnarounds:",
         card: { action: "day-summary" },
         buttons: []
       };
