@@ -433,13 +433,13 @@ function LancyApp() {
             onClick={() => onSend("Yes, please")}
             className="h-9 px-4 rounded-full border border-emerald-600 bg-white text-[13px] font-semibold text-emerald-700 active:bg-emerald-50 hover:bg-emerald-50 transition-all shadow-sm"
           >
-            Show shift summary 📋
+            Show shift summary
           </button>
           <button
             onClick={() => onSend("where is everyone")}
             className="h-9 px-4 rounded-full border border-indigo-600 bg-white text-[13px] font-semibold text-indigo-700 active:bg-indigo-50 hover:bg-indigo-50 transition-all shadow-sm"
           >
-            Show housekeeper assignments 🗺️
+            Show housekeeper assignments
           </button>
         </div>,
         "simulate-action-08"
@@ -451,13 +451,13 @@ function LancyApp() {
             onClick={() => onSend("where is everyone")}
             className="h-9 px-4 rounded-full border border-indigo-600 bg-white text-[13px] font-semibold text-indigo-700 active:bg-indigo-50 hover:bg-indigo-50 transition-all shadow-sm"
           >
-            Show live housekeeper map 🗺️
+            Show live housekeeper map
           </button>
           <button
             onClick={() => onSend("room turnarounds")}
             className="h-9 px-4 rounded-full border border-amber-600 bg-white text-[13px] font-semibold text-amber-700 active:bg-amber-50 hover:bg-amber-50 transition-all shadow-sm"
           >
-            Check turnaround priorities ⚡
+            Check turnaround priorities
           </button>
         </div>,
         "simulate-action-10"
