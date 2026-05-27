@@ -253,7 +253,7 @@ export function compileSimulation(simTime: string): SimState {
 
     if (ev.event === "BLOCKED") {
       flags.blocked402 = true;
-      room.status = "dirty";
+      room.status = "blocked";
       room.isBlocked = true;
       room.label = "Blocked";
       return;
@@ -263,7 +263,7 @@ export function compileSimulation(simTime: string): SimState {
       room.status = "dirty";
       room.label = "Dirty";
     } else if (ev.event === "INSPECTION") {
-      room.status = "dirty";
+      room.status = "inspection";
       room.label = "Inspecting";
       room.attendant = ev.housekeeper;
       room.startedAt = ev.time;
@@ -273,7 +273,7 @@ export function compileSimulation(simTime: string): SimState {
       room.attendant = ev.housekeeper;
       room.startedAt = ev.time;
     } else if (ev.event === "REVIEW") {
-      room.status = "inspection";
+      room.status = "review";
       room.label = "Review Pending";
       room.attendant = ev.housekeeper;
     } else if (ev.event === "READY") {
@@ -288,13 +288,13 @@ export function compileSimulation(simTime: string): SimState {
   // Calculate standards
   Object.keys(roomsState).forEach((num) => {
     const r = roomsState[num];
-    if (r.startedAt && (r.status === "dirty" || r.status === "cleaning")) {
+    if (r.startedAt && (r.status === "dirty" || r.status === "inspection" || r.status === "cleaning")) {
       const startMins = timeToMinutes(r.startedAt);
       const elapsed = currentMinutes - startMins;
       r.elapsed = elapsed >= 0 ? elapsed : 0;
 
       let standard = 25;
-      if (r.status === "dirty") {
+      if (r.status === "dirty" || r.status === "inspection") {
         standard = 15;
       } else {
         if (r.type === "DLX") standard = 35;

@@ -348,7 +348,7 @@ Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
     } else {
       await lancyService.updateHousekeeper(hkName, updates);
     }
-    await lancyService.updateRoomStatus(completedRoom, "inspection", { attendant: hkName });
+    await lancyService.updateRoomStatus(completedRoom, "review", { attendant: hkName });
   },
 
   async buildAutoRecommendation(simulationTime: string): Promise<{ msg: string; recommendations: Array<{ roomNumber: string; hkName: string }> }> {
@@ -374,7 +374,7 @@ Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
     });
 
     // Find pending reviews
-    const reviews = rooms.filter(r => r.status === "inspection");
+    const reviews = rooms.filter(r => r.status === "review");
 
     if (simulationTime === "08:00") {
       return {
@@ -484,13 +484,25 @@ Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
       };
     }
 
-    if (cleanMsg.includes("go to room turnarounds") || cleanMsg.includes("room turnarounds")) {
+    if (cleanMsg.includes("room turnarounds") || cleanMsg.includes("turnarounds") || cleanMsg.includes("go to room turnarounds")) {
       return {
-        reply: "Since we already have 2 clean empty rooms ready for check-ins, Room 412 doesn't need an urgent priority turnaround rush. Would you like me to assign Ana to it as part of her regular sequence?",
-        buttons: [
-          { label: "Yes, assign Ana", textToSend: "Yes, assign Ana" },
-          { label: "Someone else?", textToSend: "Someone else?" }
-        ]
+        reply: `Today's Room Turnarounds Schedule:
+- **Ana**: Room 201 next (08:00)
+- **Rosa**: Room 204 next (08:00)
+- **James**: Room 302 next (08:00)
+- **Priya**: Room 305 next (08:00)
+- **Sofia**: Room 403 next (08:15)`,
+        buttons: []
+      };
+    }
+
+    if (cleanMsg.includes("next priority") || cleanMsg.includes("deluxe") || cleanMsg.includes("priority")) {
+      return {
+        reply: `Next Deluxe Turnaround Priorities:
+- **Room 412** (DLX): Dirty. Priority Early Arrival (11:00 AM).
+- **Room 404** (DLX): Dirty. Rosa is assigned (due 10:00 AM).
+- Need to prioritize these Deluxe turnarounds for early check-ins.`,
+        buttons: []
       };
     }
 

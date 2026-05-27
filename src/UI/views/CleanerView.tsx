@@ -31,14 +31,6 @@ function makeGreeting(hk: Housekeeper) {
   return `Good morning, ${hk.name}. You are assigned to Floors 2 & 5 today. Your active task queue has 4 rooms.`;
 }
 
-const suggestedPrompts = [
-  "Items confirmed, all clear",
-  "Inspection done, ready to clean",
-  "Cleaning done, room finished",
-  "Report broken mirror in 204",
-  "AC is not working in the room",
-];
-
 export function CleanerView({ roomsList, onUpdateRoomStatus, activeHkName, selectedTime, chatMap, onHousekeeperChat, hkStatus }: Props) {
   const active: Housekeeper = housekeepers.find((h) => h.name === activeHkName) ?? housekeepers[0];
 
@@ -56,6 +48,23 @@ export function CleanerView({ roomsList, onUpdateRoomStatus, activeHkName, selec
   const handleUser = async (text: string) => {
     await onHousekeeperChat(active.name, text);
   };
+
+  const activeRoom = roomsList.find((r) => r.attendant === active.name && (r.status === "dirty" || r.status === "cleaning" || r.status === "inspection" || r.status === "review"));
+  const activeRoomNum = activeRoom ? activeRoom.number : "201";
+
+  const suggestedPrompts = (() => {
+    const list = [];
+    if (hkStatus === "Available" || !hkStatus) {
+      list.push("Items confirmed, all clear");
+    } else if (hkStatus === "Inspecting") {
+      list.push("Inspection done, ready to clean");
+    } else if (hkStatus === "Cleaning") {
+      list.push("Cleaning done, room finished");
+    }
+    list.push(`Report broken mirror in Room ${activeRoomNum}`);
+    list.push(`AC is not working in Room ${activeRoomNum}`);
+    return list;
+  })();
 
   if (hkStatus === "ABSENT") {
     return (

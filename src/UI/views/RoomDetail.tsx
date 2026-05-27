@@ -39,7 +39,7 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
     if (room.number === "412") return "Early arrival at 11 — needs to be assigned soon.";
     if (room.number === "501") return "VIP — please confirm inspection before marking ready.";
     if (room.status === "cleaning") return "In progress. Everything's on track.";
-    if (room.status === "inspection") return reviewed ? "Review complete — ready to mark as ready." : "Housekeeper marked cleaning done. Awaiting your review.";
+    if (room.status === "review") return reviewed ? "Review complete — ready to mark as ready." : "Housekeeper marked cleaning done. Awaiting your review.";
     if (room.status === "ready") return "Cleared and inspected.";
     if (room.status === "dirty") return suggested ? `I'd suggest ${suggested.name} — closest to this floor.` : "Awaiting assignment.";
     return "Occupied.";
@@ -90,7 +90,7 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
                 <div className="flex-1">
                   <div className="font-semibold text-[14px]">{hk.name}</div>
                   <div className="text-[12px] text-muted-foreground">
-                    {room.status === "cleaning" ? "Cleaning in progress" : room.status === "inspection" ? "Awaiting review" : ""}
+                    {room.status === "cleaning" ? "Cleaning in progress" : room.status === "review" ? "Awaiting review" : ""}
                   </div>
                 </div>
               </div>
@@ -145,7 +145,7 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
           )}
 
           {/* Inspection flow */}
-          {room.status === "inspection" && (
+          {room.status === "review" && (
             <div>
               <div className="text-[10px] font-semibold text-muted-foreground label-track uppercase mb-2">Supervisor review</div>
               {!reviewed ? (
