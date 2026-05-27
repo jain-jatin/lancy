@@ -129,13 +129,44 @@ export const supervisorAgent = {
     }
 
     if (cleanMsg.includes("room turnarounds") || cleanMsg.includes("turnarounds") || cleanMsg.includes("go to room turnarounds")) {
+      const cleaningDurations: Record<string, number> = { STD: 25, DLX: 35, STE: 45 };
+      const inspectionDuration = 15;
+
       const scheduleLines = housekeepers.map(hk => {
-        const firstRoom = hk.rooms && hk.rooms.length > 0 ? hk.rooms[0] : "None";
-        const arrTime = dbOperations.hkArrivals[hk.name] || "08:00";
-        return `- **${hk.name}**: Room ${firstRoom} (${arrTime})`;
-      }).join("\n");
+        const assignedRooms = (hk.rooms || []);
+        if (assignedRooms.length === 0) return `- **${hk.name}**: No rooms assigned`;
+
+        const arrivalTime = dbOperations.hkArrivals[hk.name] || "08:00";
+        let cursor = dbOperations.timeToMins(arrivalTime);
+
+        const roomLines = assignedRooms.map(roomNum => {
+          const room = rooms.find(r => r.number === roomNum);
+          const roomType = room?.type || "STD";
+          const status = room?.status || "dirty";
+
+          // If room is already done, skip time calculation
+          if (status === "ready" || status === "occupied") {
+            return `  Room ${roomNum} (${roomType}): Done`;
+          }
+
+          const startH = Math.floor(cursor / 60) % 24;
+          const startM = String(cursor % 60).padStart(2, "0");
+          const ampm = startH >= 12 ? "PM" : "AM";
+          const displayH = startH % 12 || 12;
+          const startTimeStr = `${displayH}:${startM} ${ampm}`;
+
+          // Advance cursor by inspection + cleaning for this room type
+          const totalDuration = inspectionDuration + (cleaningDurations[roomType] || 25);
+          cursor += totalDuration;
+
+          return `  Room ${roomNum} (${roomType}): starts ${startTimeStr}`;
+        });
+
+        return `- **${hk.name}**\n${roomLines.join("\n")}`;
+      }).join("\n\n");
+
       return {
-        reply: `Today's Room Turnarounds Schedule:\n${scheduleLines}`,
+        reply: `Today's Room Turnarounds Schedule:\n\n${scheduleLines}`,
         buttons: []
       };
     }
