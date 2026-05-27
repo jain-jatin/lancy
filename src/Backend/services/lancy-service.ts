@@ -219,30 +219,30 @@ export const lancyService = {
   },
 
   async assignHousekeeperRoom(hkName: string, roomNum: string) {
-    const hk = (await this.getHousekeepers()).find(h => h.name === hkName);
+    const hk = (await lancyService.getHousekeepers()).find(h => h.name === hkName);
     if (!hk) return;
     if (hk.current_room) {
-      await this.updateHousekeeper(hkName, { next_room: roomNum });
+      await lancyService.updateHousekeeper(hkName, { next_room: roomNum });
       return;
     }
-    await this.updateHousekeeper(hkName, {
+    await lancyService.updateHousekeeper(hkName, {
       current_room: roomNum,
       current_activity: "INSPECTION"
     });
-    await this.updateRoomStatus(roomNum, "dirty", { attendant: hkName });
+    await lancyService.updateRoomStatus(roomNum, "dirty", { attendant: hkName });
   },
 
   async markInspectionDone(hkName: string) {
-    const hk = (await this.getHousekeepers()).find(h => h.name === hkName);
+    const hk = (await lancyService.getHousekeepers()).find(h => h.name === hkName);
     if (!hk || !hk.current_room) return;
-    await this.updateHousekeeper(hkName, {
+    await lancyService.updateHousekeeper(hkName, {
       current_activity: "CLEANING"
     });
-    await this.updateRoomStatus(hk.current_room, "cleaning", { attendant: hkName });
+    await lancyService.updateRoomStatus(hk.current_room, "cleaning", { attendant: hkName });
   },
 
   async markCleaningDone(hkName: string) {
-    const hk = (await this.getHousekeepers()).find(h => h.name === hkName);
+    const hk = (await lancyService.getHousekeepers()).find(h => h.name === hkName);
     if (!hk || !hk.current_room) return;
     const completedRoom = hk.current_room;
     const completedList = [...(hk.rooms_completed || []), completedRoom];
@@ -256,17 +256,17 @@ export const lancyService = {
       updates.current_room = next;
       updates.current_activity = "INSPECTION";
       updates.next_room = null;
-      await this.updateHousekeeper(hkName, updates);
-      await this.updateRoomStatus(next, "dirty", { attendant: hkName });
+      await lancyService.updateHousekeeper(hkName, updates);
+      await lancyService.updateRoomStatus(next, "dirty", { attendant: hkName });
     } else {
-      await this.updateHousekeeper(hkName, updates);
+      await lancyService.updateHousekeeper(hkName, updates);
     }
-    await this.updateRoomStatus(completedRoom, "inspection", { attendant: hkName });
+    await lancyService.updateRoomStatus(completedRoom, "inspection", { attendant: hkName });
   },
 
   async buildAutoRecommendation(simulationTime: string): Promise<{ msg: string; recommendations: Array<{ roomNumber: string; hkName: string }> }> {
-    const rooms = await this.getRooms();
-    const housekeepers = await this.getHousekeepers();
+    const rooms = await lancyService.getRooms();
+    const housekeepers = await lancyService.getHousekeepers();
 
     // Find unassigned dirty rooms
     const unassigned = rooms
@@ -280,10 +280,10 @@ export const lancyService = {
       });
 
     // Find available housekeepers (arrived + idle)
-    const currentMins = this.timeToMins(simulationTime);
+    const currentMins = lancyService.timeToMins(simulationTime);
     const available = housekeepers.filter(hk => {
-      const arrTime = this.hkArrivals[hk.name] || "08:00";
-      return currentMins >= this.timeToMins(arrTime) && !hk.current_room;
+      const arrTime = lancyService.hkArrivals[hk.name] || "08:00";
+      return currentMins >= lancyService.timeToMins(arrTime) && !hk.current_room;
     });
 
     // Find pending reviews
@@ -321,9 +321,9 @@ export const lancyService = {
 
   async lancyChat(message: string, housekeeperContext?: string, simTime = "08:00"): Promise<{ reply: string; card?: any; buttons?: Array<{ label: string; textToSend: string }> }> {
     const cleanMsg = message.trim().toLowerCase();
-    const rooms = await this.getRooms();
-    const housekeepers = await this.getHousekeepers();
-    const currentMins = this.timeToMins(simTime);
+    const rooms = await lancyService.getRooms();
+    const housekeepers = await lancyService.getHousekeepers();
+    const currentMins = lancyService.timeToMins(simTime);
 
     // TRACK 1 - Monospace Team Map Query Check
     if (
@@ -335,8 +335,8 @@ export const lancyService = {
     ) {
       const hkLines = housekeepers.map((hk) => {
         const namePad = hk.name.padEnd(10, " ");
-        const arrTime = this.hkArrivals[hk.name] || "08:00";
-        if (currentMins < this.timeToMins(arrTime)) {
+        const arrTime = lancyService.hkArrivals[hk.name] || "08:00";
+        if (currentMins < lancyService.timeToMins(arrTime)) {
           return `${namePad}NOT ARRIVED  Expected ${arrTime}`;
         }
         if (!hk.current_room) {
@@ -419,7 +419,7 @@ export const lancyService = {
       const nameMatch = message.match(/to\s+(\w+)/i);
       const name = nameMatch ? nameMatch[1] : "Rosa";
       const formattedName = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
-      await this.assignHousekeeperRoom(formattedName, "412");
+      await lancyService.assignHousekeeperRoom(formattedName, "412");
       return {
         reply: `Done — ${formattedName} has been assigned to Room 412 and notified on their device.`,
         buttons: []
@@ -427,7 +427,7 @@ export const lancyService = {
     }
 
     if (cleanMsg.includes("assign ana") || cleanMsg.includes("yes, assign ana")) {
-      await this.assignHousekeeperRoom("Ana", "412");
+      await lancyService.assignHousekeeperRoom("Ana", "412");
       return {
         reply: "Done — Ana has been assigned to Room 412 and notified on her device.",
         buttons: []
@@ -435,7 +435,7 @@ export const lancyService = {
     }
 
     if (cleanMsg.includes("send maintenance") || cleanMsg.includes("send now")) {
-      await this.updateRoomStatus("215", "cleaning", { note: "Shower head work-order logged" });
+      await lancyService.updateRoomStatus("215", "cleaning", { note: "Shower head work-order logged" });
       return {
         reply: "Sent. Maintenance Ticket #HK-215 is open. James is dispatched.",
         buttons: []
@@ -462,7 +462,7 @@ ${rooms.map(r => {
 
 HOUSEKEEPER STATUS:
 ${housekeepers.map(hk => {
-  const arrTime = this.hkArrivals[hk.name] || '08:00';
+  const arrTime = lancyService.hkArrivals[hk.name] || '08:00';
   if (arrTime > simTime) return `${hk.name}: NOT YET ARRIVED (arrives ${arrTime})`
   if (!hk.current_room) return `${hk.name}: IDLE — available`
   return `${hk.name}: ${hk.current_activity} in Room ${hk.current_room} — 10m elapsed`
@@ -534,50 +534,50 @@ RULES:
   },
 
   async housekeeperChat(name: string, text: string): Promise<string> {
-    return this.processHousekeeperMessage(name, text);
+    return lancyService.processHousekeeperMessage(name, text);
   },
 
   async processHousekeeperMessage(hkName: string, text: string): Promise<string> {
     console.log(`[processHousekeeperMessage] Housekeeper ${hkName} sent: "${text}"`);
     const cleanMsg = text.trim().toLowerCase();
-    const hks = await this.getHousekeepers();
+    const hks = await lancyService.getHousekeepers();
     const hk = hks.find(h => h.name.toLowerCase() === hkName.toLowerCase());
     if (!hk) return "Housekeeper not found.";
 
-    const rooms = await this.getRooms();
+    const rooms = await lancyService.getRooms();
     const currentRoom = rooms.find(r => r.number === hk.current_room);
 
     // 1. Add housekeeper message to message history so supervisor and cleaner views can see it
-    await this.addMessage("hk", hkName, text);
+    await lancyService.addMessage("hk", hkName, text);
 
     // TRACK 1 - Deterministic Housekeeper Intent Matching Fallback
     const fallbackHandler = async () => {
       if (cleanMsg.includes("all good") || cleanMsg.includes("items ok") || cleanMsg.includes("nothing missing") || cleanMsg.includes("checked everything") || cleanMsg.includes("room is clear")) {
         if (hk.current_room) {
-          await this.updateHousekeeper(hk.name, { current_activity: "INSPECTION" });
-          await this.updateRoomStatus(hk.current_room, "dirty", { attendant: hk.name });
+          await lancyService.updateHousekeeper(hk.name, { current_activity: "INSPECTION" });
+          await lancyService.updateRoomStatus(hk.current_room, "dirty", { attendant: hk.name });
         }
         return "Got it. I have noted the room is clear and notified reception. You can start inspection now.";
       }
 
       if (cleanMsg.includes("inspection done") || cleanMsg.includes("checked the room") || cleanMsg.includes("ready to clean")) {
         if (hk.current_room) {
-          await this.updateHousekeeper(hk.name, { current_activity: "CLEANING" });
-          await this.updateRoomStatus(hk.current_room, "cleaning", { attendant: hk.name });
+          await lancyService.updateHousekeeper(hk.name, { current_activity: "CLEANING" });
+          await lancyService.updateRoomStatus(hk.current_room, "cleaning", { attendant: hk.name });
         }
         return `Inspection recorded. Starting cleaning mode for Room ${hk.current_room}. Let me know when done.`;
       }
 
       if (cleanMsg.includes("done") || cleanMsg.includes("finished") || cleanMsg.includes("room ready") || cleanMsg.includes("cleaning complete")) {
         if (hk.current_room) {
-          await this.markCleaningDone(hk.name);
+          await lancyService.markCleaningDone(hk.name);
         }
         return `Cleaning logged. I have sent Marcus a review request for Room ${hk.current_room}. You are free.`;
       }
 
       if (cleanMsg.includes("damage") || cleanMsg.includes("broken") || cleanMsg.includes("mirror") || cleanMsg.includes("lost") || cleanMsg.includes("found something") || cleanMsg.includes("left something")) {
         if (hk.current_room) {
-          await this.updateRoomStatus(hk.current_room, "dirty", { damageReported: true });
+          await lancyService.updateRoomStatus(hk.current_room, "dirty", { damageReported: true });
         }
         return "Understood. I have stored this and relayed it to reception. The guest will be notified. Continue with your work.";
       }
@@ -664,7 +664,7 @@ Respond in 2 sentences maximum.
         if (!reply) {
           reply = "I've logged your update.";
         }
-        await this.addMessage("lancy", "Lancy", reply);
+        await lancyService.addMessage("lancy", "Lancy", reply);
         return reply;
       } catch (err) {
         console.error("Gemini AI API Error in processHousekeeperMessage:", err);
@@ -672,7 +672,7 @@ Respond in 2 sentences maximum.
     }
 
     const fallbackReply = await fallbackHandler();
-    await this.addMessage("lancy", "Lancy", fallbackReply);
+    await lancyService.addMessage("lancy", "Lancy", fallbackReply);
     return fallbackReply;
   },
 
