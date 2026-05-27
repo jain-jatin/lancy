@@ -72,16 +72,16 @@ export function RoomsView({ onSelectRoom, roomsList }: { onSelectRoom: (r: Room)
 
         {/* Room Type Legend */}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground pt-1 pb-1">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-3.5 w-6 rounded-[3px] bg-slate-100 border border-slate-300 text-[7px] font-bold text-slate-500 leading-[14px] text-center">STD</span>
+          <span className="flex items-center gap-1">
+            <span className="text-[8px] font-bold text-muted-foreground tracking-wider uppercase mr-1">STD</span>
             Standard
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-3.5 w-6 rounded-[3px] bg-amber-50 border border-amber-300 text-[7px] font-bold text-amber-600 leading-[14px] text-center">DLX</span>
+          <span className="flex items-center gap-1">
+            <span className="text-[8px] font-bold text-muted-foreground tracking-wider uppercase mr-1">DLX</span>
             Deluxe
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-3.5 w-6 rounded-[3px] bg-violet-50 border border-violet-300 text-[7px] font-bold text-violet-600 leading-[14px] text-center">STE</span>
+          <span className="flex items-center gap-1">
+            <span className="text-[8px] font-bold text-muted-foreground tracking-wider uppercase mr-1">STE</span>
             Suite
           </span>
         </div>
