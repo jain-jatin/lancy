@@ -14,6 +14,8 @@ interface Props {
   onSelectHousekeeper?: (name: string) => void;
   activeHkName?: string;
   selectedTime: string;
+  chatMap: Record<string, Msg[]>;
+  onHousekeeperChat: (hkName: string, text: string) => Promise<void>;
 }
 
 const HOUSEKEEPER_ARRIVALS: Record<string, string> = {
@@ -36,7 +38,7 @@ const suggestedPrompts = [
   "AC is not working in the room",
 ];
 
-export function CleanerView({ roomsList, onUpdateRoomStatus, activeHkName, selectedTime }: Props) {
+export function CleanerView({ roomsList, onUpdateRoomStatus, activeHkName, selectedTime, chatMap, onHousekeeperChat }: Props) {
   const active: Housekeeper = housekeepers.find((h) => h.name === activeHkName) ?? housekeepers[0];
 
   const timeToMins = (t: string) => {
@@ -48,29 +50,10 @@ export function CleanerView({ roomsList, onUpdateRoomStatus, activeHkName, selec
   const arrivalTimeStr = HOUSEKEEPER_ARRIVALS[active.name] || "08:00";
   const hasArrived = currentMins >= timeToMins(arrivalTimeStr);
 
-  const [chatMap, setChatMap] = useState<Record<string, Msg[]>>(() =>
-    Object.fromEntries(housekeepers.map((h) => [h.name, [
-      { id: "init-" + h.name, from: "lancy", text: makeGreeting(h) }
-    ]]))
-  );
-
   const messages = chatMap[active.name] ?? [];
 
-  const push = (name: string, text: string, from: "lancy" | "hk") => {
-    setChatMap((prev) => ({
-      ...prev,
-      [name]: [...(prev[name] ?? []), { id: crypto.randomUUID(), from, text }],
-    }));
-  };
-
   const handleUser = async (text: string) => {
-    push(active.name, text, "hk");
-    const reply = await lancyService.housekeeperChat(active.name, text);
-    
-    // Refresh rooms and supervisor board by calling onUpdateRoomStatus with dummy to trigger state refresh
-    onUpdateRoomStatus("", "dirty");
-    
-    setTimeout(() => push(active.name, reply, "lancy"), 600);
+    await onHousekeeperChat(active.name, text);
   };
 
   if (!hasArrived) {

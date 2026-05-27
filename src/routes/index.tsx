@@ -68,6 +68,11 @@ function LancyApp() {
     }
   ]);
   const [activeHkName, setActiveHkName] = useState<string>(housekeepers[0].name);
+  const [hkChatMap, setHkChatMap] = useState<Record<string, Array<{ id: string; from: "lancy" | "hk"; text: string }>>>(() =>
+    Object.fromEntries(housekeepers.map((h) => [h.name, [
+      { id: "init-" + h.name, from: "lancy", text: `Good morning, ${h.name}. You are assigned to Floors 2 & 5 today. Your active task queue has 4 rooms.` }
+    ]]))
+  );
 
   const [selectedTime, setSelectedTime] = useState("08:00");
   const [simState, setSimState] = useState(() => compileSimulation("08:00"));
@@ -79,10 +84,87 @@ function LancyApp() {
   const pushMsg = (node: React.ReactNode, id: string = crypto.randomUUID()) =>
     setExtra((p) => [...p, { id, render: () => node }]);
 
+  const handleHousekeeperChat = async (hkName: string, text: string) => {
+    const msgId = crypto.randomUUID();
+    setHkChatMap((prev) => ({
+      ...prev,
+      [hkName]: [...(prev[hkName] ?? []), { id: msgId, from: "hk", text }],
+    }));
+
+    const reply = await lancyService.housekeeperChat(hkName, text);
+
+    const replyId = crypto.randomUUID();
+    setHkChatMap((prev) => ({
+      ...prev,
+      [hkName]: [...(prev[hkName] ?? []), { id: replyId, from: "lancy", text: reply }],
+    }));
+
+    const dbRooms = await lancyService.getRooms();
+    const dbHks = await lancyService.getHousekeepers();
+    setSimState((prev) => {
+      const updatedRooms = { ...prev.rooms };
+      dbRooms.forEach((r) => {
+        if (updatedRooms[r.number]) {
+          updatedRooms[r.number] = { ...updatedRooms[r.number], ...r };
+        }
+      });
+      const updatedHks = { ...prev.housekeepers };
+      dbHks.forEach((h) => {
+        if (updatedHks[h.name]) {
+          updatedHks[h.name] = {
+            ...updatedHks[h.name],
+            status: h.current_activity === "INSPECTION" ? "Inspecting" : h.current_activity === "CLEANING" ? "Cleaning" : "Available",
+            currentRoom: h.current_room || undefined,
+            completed: h.rooms_completed || [],
+            nextInQueue: h.next_room || "None",
+          };
+        }
+      });
+      return {
+        ...prev,
+        rooms: updatedRooms,
+        housekeepers: updatedHks,
+      };
+    });
+
+    let alertMsg = "";
+    const cleanText = text.toLowerCase();
+    if (cleanText.includes("damage") || cleanText.includes("broken") || cleanText.includes("mirror")) {
+      alertMsg = `⚠️ **Damage Alert from ${hkName}:** Reported a broken item/mirror ("${text}"). Reception has been notified.`;
+    } else if (cleanText.includes("done") || cleanText.includes("finished") || cleanText.includes("complete") || cleanText.includes("room ready")) {
+      alertMsg = `✅ **Task Completed by ${hkName}:** Completed cleaning their assigned room. Review is pending sign-off.`;
+    } else if (cleanText.includes("all good") || cleanText.includes("items ok") || cleanText.includes("clear")) {
+      alertMsg = `📋 **Status Update from ${hkName}:** Room is clear. Started inspection turnaround.`;
+    } else if (cleanText.includes("ac") || cleanText.includes("leak") || cleanText.includes("pipe") || cleanText.includes("tv") || cleanText.includes("light")) {
+      alertMsg = `🔧 **Maintenance Request from ${hkName}:** Reported issue ("${text}"). Work order logged.`;
+    } else {
+      alertMsg = `💬 **Update from ${hkName}:** "${text}"\nLancy replied: "${reply}"`;
+    }
+
+    pushMsg(
+      <LancyBubble>
+        <div className="flex items-start gap-2">
+          <div className="text-[14px]">🔔</div>
+          <div className="text-[13px] leading-relaxed">
+            <span className="font-bold text-emerald-800">Lancy Attendant Update</span>
+            <div className="mt-1 text-foreground" dangerouslySetInnerHTML={{ __html: alertMsg.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+          </div>
+        </div>
+      </LancyBubble>
+    );
+  };
+
   const handleSimulate = async (time: string) => {
     setSelectedTime(time);
     const compiled = compileSimulation(time);
     setSimState(compiled);
+
+    // Reset housekeeper chats on Simulate!
+    setHkChatMap(
+      Object.fromEntries(housekeepers.map((h) => [h.name, [
+        { id: "init-" + h.name, from: "lancy", text: `Good morning, ${h.name}. You are assigned to Floors 2 & 5 today. Your active task queue has 4 rooms.` }
+      ]]))
+    );
 
     // Sync mock DB (localStorage) with compiled state
     const dbHks = await lancyService.getHousekeepers();
@@ -450,6 +532,8 @@ function LancyApp() {
               onSelectHousekeeper={setActiveHkName}
               activeHkName={activeHkName}
               selectedTime={selectedTime}
+              chatMap={hkChatMap}
+              onHousekeeperChat={handleHousekeeperChat}
             />
           )}
         </div>
