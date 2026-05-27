@@ -94,7 +94,27 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    position: fixed;
   }
+  
+  #root {
+    height: 100dvh;
+    width: 100vw;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app-container {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
   button:focus-visible,
   input:focus-visible,
   textarea:focus-visible,

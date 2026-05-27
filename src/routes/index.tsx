@@ -756,7 +756,7 @@ function LancyApp() {
   return (
     <div className="h-screen w-full flex justify-center bg-[#EFEDE8] overflow-hidden">
       <Toaster position="top-center" />
-      <div className="relative w-full max-w-[390px] h-screen bg-background flex flex-col overflow-hidden shadow-xl">
+      <div className="relative w-full max-w-[390px] h-screen bg-background flex flex-col overflow-hidden shadow-xl app-container">
         {/* Header */}
         <header className="bg-white border-b border-border px-5 pt-3 pb-3 shrink-0 shadow-sm">
           <div className="flex items-center justify-between gap-3">
