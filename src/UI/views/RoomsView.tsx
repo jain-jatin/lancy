@@ -5,7 +5,8 @@ import { AppSelect } from "@/UI/components/AppSelect";
 import type { Room } from "@/simulation/data";
 
 const statusOptions = [
-  { value: "all", label: "All Status" },
+  { value: "all", label: "Room Status" },
+  { value: "all", label: "All" },
   { value: "dirty", label: "Dirty" },
   { value: "cleaning", label: "Cleaning" },
   { value: "inspection", label: "Inspection" },
@@ -14,6 +15,7 @@ const statusOptions = [
 ];
 
 const hkOptions = [
+  { value: "all", label: "Housekeeper" },
   { value: "all", label: "All" },
   { value: "Marcus", label: "Marcus" },
   ...housekeepers.map((h) => ({ value: h.name, label: h.name })),
