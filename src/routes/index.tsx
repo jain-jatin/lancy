@@ -419,85 +419,96 @@ function LancyApp() {
     // Call buildAutoRecommendation to get deterministic Lancy recommendations
     const rec = await lancyService.buildAutoRecommendation(time);
 
-    // Clear old action buttons
-    setExtra((prev) => prev.filter((item) => item.id !== "greeting-btn" && !item.id.endsWith("-btn") && !item.id.startsWith("simulate-action-")));
-
-    // Push the text recommendation bubble
-    pushMsg(<LancyBubble><div className="whitespace-pre-line">{rec.msg}</div></LancyBubble>);
+    // Completely reset Marcus chat history (extra state) on Simulate to keep states aligned with time-warp
+    const initMsgId = crypto.randomUUID();
+    const newExtra: Array<{ id: string; render: () => React.ReactNode }> = [
+      {
+        id: initMsgId,
+        render: () => <LancyBubble><div className="whitespace-pre-line">{rec.msg}</div></LancyBubble>
+      }
+    ];
 
     // Push action buttons for the simulation time
     if (time === "08:00") {
-      pushMsg(
-        <div className="flex flex-wrap gap-2 pt-1 animate-fade-in" key="simulate-action-08">
-          <button
-            onClick={() => onSend("Yes, please")}
-            className="h-9 px-4 rounded-full border border-emerald-600 bg-white text-[13px] font-semibold text-emerald-700 active:bg-emerald-50 hover:bg-emerald-50 transition-all shadow-sm"
-          >
-            Show shift summary
-          </button>
-          <button
-            onClick={() => onSend("where is everyone")}
-            className="h-9 px-4 rounded-full border border-indigo-600 bg-white text-[13px] font-semibold text-indigo-700 active:bg-indigo-50 hover:bg-indigo-50 transition-all shadow-sm"
-          >
-            Show housekeeper assignments
-          </button>
-        </div>,
-        "simulate-action-08"
-      );
+      newExtra.push({
+        id: "simulate-action-08",
+        render: () => (
+          <div className="flex flex-wrap gap-2 pt-1 animate-fade-in">
+            <button
+              onClick={() => onSend("Yes, please")}
+              className="h-9 px-4 rounded-full border border-emerald-600 bg-white text-[13px] font-semibold text-emerald-700 active:bg-emerald-50 hover:bg-emerald-50 transition-all shadow-sm"
+            >
+              Show shift summary
+            </button>
+            <button
+              onClick={() => onSend("where is everyone")}
+              className="h-9 px-4 rounded-full border border-indigo-600 bg-white text-[13px] font-semibold text-indigo-700 active:bg-indigo-50 hover:bg-indigo-50 transition-all shadow-sm"
+            >
+              Show housekeeper assignments
+            </button>
+          </div>
+        )
+      });
     } else if (time === "10:00") {
-      pushMsg(
-        <div className="flex flex-wrap gap-2 pt-1 animate-fade-in" key="simulate-action-10">
-          <button
-            onClick={() => onSend("where is everyone")}
-            className="h-9 px-4 rounded-full border border-indigo-600 bg-white text-[13px] font-semibold text-indigo-700 active:bg-indigo-50 hover:bg-indigo-50 transition-all shadow-sm"
-          >
-            Show live housekeeper map
-          </button>
-          <button
-            onClick={() => onSend("room turnarounds")}
-            className="h-9 px-4 rounded-full border border-amber-600 bg-white text-[13px] font-semibold text-amber-700 active:bg-amber-50 hover:bg-amber-50 transition-all shadow-sm"
-          >
-            Check turnaround priorities
-          </button>
-        </div>,
-        "simulate-action-10"
-      );
+      newExtra.push({
+        id: "simulate-action-10",
+        render: () => (
+          <div className="flex flex-wrap gap-2 pt-1 animate-fade-in">
+            <button
+              onClick={() => onSend("where is everyone")}
+              className="h-9 px-4 rounded-full border border-indigo-600 bg-white text-[13px] font-semibold text-indigo-700 active:bg-indigo-50 hover:bg-indigo-50 transition-all shadow-sm"
+            >
+              Show live housekeeper map
+            </button>
+            <button
+              onClick={() => onSend("room turnarounds")}
+              className="h-9 px-4 rounded-full border border-amber-600 bg-white text-[13px] font-semibold text-amber-700 active:bg-amber-50 hover:bg-amber-50 transition-all shadow-sm"
+            >
+              Check turnaround priorities
+            </button>
+          </div>
+        )
+      });
     }
 
     // Push inline card recommendations
     if (rec.recommendations && rec.recommendations.length > 0) {
       rec.recommendations.forEach((r) => {
         const btnId = `${r.roomNumber}-${r.hkName}-btn`;
-        pushMsg(
-          <div className="max-w-[88%] rounded-[14px] bg-white border border-border shadow-card p-3.5 mt-1 animate-fade-in" key={btnId}>
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase mb-1">Recommendation</div>
-            <div className="text-[13px] font-bold text-foreground">Room {r.roomNumber} &rarr; {r.hkName}</div>
-            <div className="flex gap-2 mt-2.5">
-              <button
-                onClick={async () => {
-                  await lancyService.assignHousekeeperRoom(r.hkName, r.roomNumber);
-                  toast.success(`Assigned Room ${r.roomNumber} to ${r.hkName}`);
-                  // Refresh state
-                  handleSimulate(time);
-                }}
-                className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold active:scale-95 transition-all shadow-sm"
-              >
-                Assign {r.hkName}
-              </button>
-              <button
-                onClick={() => {
-                  setActiveRoom(compiled.rooms[r.roomNumber] || null);
-                }}
-                className="h-8 px-3 rounded-lg border border-border hover:bg-secondary text-foreground text-[11px] font-bold active:scale-95 transition-all"
-              >
-                Edit
-              </button>
+        newExtra.push({
+          id: btnId,
+          render: () => (
+            <div className="max-w-[88%] rounded-[14px] bg-white border border-border shadow-card p-3.5 mt-1 animate-fade-in">
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase mb-1">Recommendation</div>
+              <div className="text-[13px] font-bold text-foreground">Room {r.roomNumber} &rarr; {r.hkName}</div>
+              <div className="flex gap-2 mt-2.5">
+                <button
+                  onClick={async () => {
+                    await lancyService.assignHousekeeperRoom(r.hkName, r.roomNumber);
+                    toast.success(`Assigned Room ${r.roomNumber} to ${r.hkName}`);
+                    // Refresh state
+                    handleSimulate(time);
+                  }}
+                  className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold active:scale-95 transition-all shadow-sm"
+                >
+                  Assign {r.hkName}
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveRoom(compiled.rooms[r.roomNumber] || null);
+                  }}
+                  className="h-8 px-3 rounded-lg border border-border hover:bg-secondary text-foreground text-[11px] font-bold active:scale-95 transition-all"
+                >
+                  Edit
+                </button>
+              </div>
             </div>
-          </div>,
-          btnId
-        );
+          )
+        });
       });
     }
+
+    setExtra(newExtra);
   };
 
   const handleUpdateRoomStatus = async (number: string, status: Room["status"], updates?: Partial<Room>) => {
