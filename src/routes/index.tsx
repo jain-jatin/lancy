@@ -552,6 +552,73 @@ function LancyApp() {
     if (number) {
       await lancyService.updateRoomStatus(number, status, updates);
     }
+
+    // If a room is BLOCKED (needs maintenance):
+    if (status === "blocked") {
+      const dbHks = await lancyService.getHousekeepers();
+      // Find if anyone is currently working in this room
+      const workingHk = dbHks.find((h) => h.current_room === number);
+      if (workingHk) {
+        const nextRoom = workingHk.next_room || null;
+        // Assign housekeeper to next room or clear current activity
+        await lancyService.updateHousekeeper(workingHk.name, {
+          current_room: null,
+          current_activity: null,
+          next_room: nextRoom,
+        });
+
+        // Relayout chat notification to Marcus
+        const receptionMsg = `Reception has been alerted to reassign any upcoming guests for Room ${number}.`;
+        const nextTaskMsg = nextRoom 
+          ? `${workingHk.name} has been reassigned to their next room in queue: Room ${nextRoom}.` 
+          : `${workingHk.name} has completed their queue and is now available.`;
+
+        pushMsg(
+          <LancyBubble>
+            <div className="flex items-start gap-2">
+              <div className="text-[14px]">🚨</div>
+              <div className="text-[13px] leading-relaxed">
+                <span className="font-bold text-red-800">Lancy Maintenance Update</span>
+                <div className="mt-1 text-foreground">
+                  Room <strong>{number}</strong> has been marked as <strong>BLOCKED</strong> due to maintenance. {receptionMsg} {nextTaskMsg}
+                </div>
+              </div>
+            </div>
+          </LancyBubble>
+        );
+
+        // Send housekeeper a notification in their chat tab
+        const hkMsg = nextRoom 
+          ? `Marcus has blocked Room ${number} due to maintenance. Please stop work and proceed to Room ${nextRoom}.`
+          : `Marcus has blocked Room ${number} due to maintenance. Please stop work and standby for new tasks.`;
+        
+        await lancyService.addMessage("lancy", workingHk.name, hkMsg);
+
+        setHkChatMap((prev) => ({
+          ...prev,
+          [workingHk.name]: [
+            ...(prev[workingHk.name] ?? []),
+            { id: crypto.randomUUID(), from: "lancy", text: hkMsg },
+          ],
+        }));
+      } else {
+        // If no one is actively working inside it but it gets blocked
+        pushMsg(
+          <LancyBubble>
+            <div className="flex items-start gap-2">
+              <div className="text-[14px]">🔧</div>
+              <div className="text-[13px] leading-relaxed">
+                <span className="font-bold text-red-800">Room Blocked</span>
+                <div className="mt-1 text-foreground">
+                  Room <strong>{number}</strong> is now <strong>BLOCKED</strong> from inventory. Reception has been alerted to reassign incoming guests.
+                </div>
+              </div>
+            </div>
+          </LancyBubble>
+        );
+      }
+    }
+
     // Reload state from database
     const dbRooms = await lancyService.getRooms();
     const dbHks = await lancyService.getHousekeepers();
@@ -565,9 +632,22 @@ function LancyApp() {
           };
         }
       });
+      const updatedHks = { ...prev.housekeepers };
+      dbHks.forEach((h) => {
+        if (updatedHks[h.name]) {
+          updatedHks[h.name] = {
+            ...updatedHks[h.name],
+            status: h.status === "ABSENT" ? "ABSENT" : (h.current_activity === "INSPECTION" ? "Inspecting" : h.current_activity === "CLEANING" ? "Cleaning" : "Available"),
+            currentRoom: h.current_room || undefined,
+            completed: h.rooms_completed || [],
+            nextInQueue: h.next_room || "None",
+          };
+        }
+      });
       return {
         ...prev,
         rooms: updatedRooms,
+        housekeepers: updatedHks,
       };
     });
   };
