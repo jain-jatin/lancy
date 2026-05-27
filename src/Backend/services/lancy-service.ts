@@ -417,7 +417,7 @@ Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
       unassigned.slice(0, available.length).forEach((room, i) => {
         const hk = available[i];
         let recLine = `Room ${room.number} (${room.type}, Floor ${room.floor})`;
-        if (room.earlyCheckIn) recLine += ` — EARLY CHECK-IN`;
+        if (room.earlyCheckIn) recLine += `, EARLY CHECK-IN`;
         recLine += `\nRecommended: ${hk.name}\n\n`;
         msg += recLine;
         recommendations.push({ roomNumber: room.number, hkName: hk.name });
@@ -524,7 +524,7 @@ Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
       const formattedName = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
       await lancyService.assignHousekeeperRoom(formattedName, "412");
       return {
-        reply: `Done — ${formattedName} has been assigned to Room 412 and notified on their device.`,
+        reply: `Done. ${formattedName} has been assigned to Room 412 and notified on their device.`,
         buttons: []
       };
     }
@@ -532,7 +532,7 @@ Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
     if (cleanMsg.includes("assign ana") || cleanMsg.includes("yes, assign ana")) {
       await lancyService.assignHousekeeperRoom("Ana", "412");
       return {
-        reply: "Done — Ana has been assigned to Room 412 and notified on her device.",
+        reply: "Done. Ana has been assigned to Room 412 and notified on her device.",
         buttons: []
       };
     }
@@ -560,23 +560,24 @@ ${rooms.map(r => {
     r.note ? `MAINTENANCE: ${r.note}` : null,
     r.status === 'blocked' ? 'BLOCKED' : null
   ].filter(Boolean).join(' | ')
-  return `Room ${r.number} (${r.type} Fl${r.floor}): ${r.status} — ${hk}${flags ? ' [' + flags + ']' : ''}`
+  return `Room ${r.number} (${r.type} Fl${r.floor}): ${r.status}, Attendant: ${hk}${flags ? ' [' + flags + ']' : ''}`
 }).join('\n')}
 
 HOUSEKEEPER STATUS:
 ${housekeepers.map(hk => {
   const arrTime = lancyService.hkArrivals[hk.name] || '08:00';
   if (arrTime > simTime) return `${hk.name}: NOT YET ARRIVED (arrives ${arrTime})`
-  if (!hk.current_room) return `${hk.name}: IDLE — available`
-  return `${hk.name}: ${hk.current_activity} in Room ${hk.current_room} — 10m elapsed`
+  if (!hk.current_room) return `${hk.name}: IDLE (available)`
+  return `${hk.name}: ${hk.current_activity} in Room ${hk.current_room} (10m elapsed)`
 }).join('\n')}
 
 PENDING REVIEWS:
-${rooms.filter(r => r.status === 'inspection').map(r =>
-  `Room ${r.number} (${r.type}) — waiting 5m`
+${rooms.filter(r => r.status === 'review').map(r =>
+  `Room ${r.number} (${r.type}), waiting 5m`
 ).join('\n') || 'None'}
 
 RULES:
+- Never use em dashes (—) or double hyphens (--) in your replies. Use commas, colons, or parentheses instead.
 - Respond in 2 sentences maximum unless building a full plan.
 - Never mark a room READY without Marcus confirming.
 - Never assign a housekeeper without Marcus confirming.
@@ -1015,7 +1016,7 @@ export const executeTool = async (toolName: string, args: any): Promise<any> => 
         await executeTool('notify_supervisor', {
           card_type: 'URGENT',
           room_number: args.room_number,
-          title: `Major Issue — Room ${args.room_number}`,
+          title: `Major Issue: Room ${args.room_number}`,
           message: `${args.reported_by} reports: ${args.issue_description}`,
           option_a: 'Stop + Block Room',
           option_b: 'Continue with Caution'
@@ -1025,7 +1026,7 @@ export const executeTool = async (toolName: string, args: any): Promise<any> => 
         await executeTool('notify_supervisor', {
           card_type: 'DECISION',
           room_number: args.room_number,
-          title: `Minor Issue — Room ${args.room_number}`,
+          title: `Minor Issue: Room ${args.room_number}`,
           message: `${args.reported_by} reports the TV is not functioning in Room ${args.room_number}. Do you want to continue cleaning or pause for maintenance?`,
           option_a: 'Continue Cleaning',
           option_b: 'Pause'
@@ -1089,7 +1090,7 @@ async function buildHotelSnapshot(): Promise<string> {
   
   const roomsStr = rooms.map(r => {
     const hk = r.attendant || 'Unassigned';
-    return `Room ${r.number} (${r.type}): ${r.status} — Attendant: ${hk}`;
+    return `Room ${r.number} (${r.type}): ${r.status}, Attendant: ${hk}`;
   }).join('\n');
 
   const hksStr = housekeepers.map(hk => {

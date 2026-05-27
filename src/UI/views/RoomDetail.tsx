@@ -36,12 +36,12 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
 
   const lancyLine = (() => {
     if (room.number === "215") return "Running about 9 minutes behind. Maintenance is aware of the shower head.";
-    if (room.number === "412") return "Early arrival at 11 — needs to be assigned soon.";
-    if (room.number === "501") return "VIP — please confirm inspection before marking ready.";
+    if (room.number === "412") return "Early arrival at 11, needs to be assigned soon.";
+    if (room.number === "501") return "VIP: please confirm inspection before marking ready.";
     if (room.status === "cleaning") return "In progress. Everything's on track.";
-    if (room.status === "review") return reviewed ? "Review complete — ready to mark as ready." : "Housekeeper marked cleaning done. Awaiting your review.";
+    if (room.status === "review") return reviewed ? "Review complete. Ready to mark as ready." : "Housekeeper marked cleaning done. Awaiting your review.";
     if (room.status === "ready") return "Cleared and inspected.";
-    if (room.status === "dirty") return suggested ? `I'd suggest ${suggested.name} — closest to this floor.` : "Awaiting assignment.";
+    if (room.status === "dirty") return suggested ? `I'd suggest ${suggested.name}, closest to this floor.` : "Awaiting assignment.";
     return "Occupied.";
   })();
 

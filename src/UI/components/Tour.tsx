@@ -12,7 +12,7 @@ const steps: Step[] = [
   { selector: "[data-tour='nav-chat']", title: "Talk to Lancy", body: "Chat with Lancy to plan the shift, assign rooms, and stay on top of the day.", placement: "top" },
   { selector: "[data-tour='nav-rooms']", title: "See all rooms", body: "Tap any room to see who is working on it and how long they have been there.", placement: "top" },
   { selector: "[data-tour='nav-cleaner']", title: "Act as a housekeeper", body: "Switch into a housekeeper's view to simulate their workflow and chat as them.", placement: "top" },
-  { selector: "[data-tour='simulate']", title: "Simulate the day", body: "Pick a time and tap Simulate to jump to that point — housekeepers and rooms update to match.", placement: "bottom" },
+  { selector: "[data-tour='simulate']", title: "Simulate the day", body: "Pick a time and tap Simulate to jump to that point, housekeepers and rooms update to match.", placement: "bottom" },
 ];
 
 interface Props {

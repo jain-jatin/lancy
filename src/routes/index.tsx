@@ -945,7 +945,7 @@ function LancyApp() {
                 </button>
               </div>
               <div className="rounded-[12px] bg-secondary p-3.5 text-[13px] leading-relaxed mb-4 text-foreground">
-                Room 215 has a broken shower head. Guest arriving at 3pm — please inspect and repair before 2pm. Priority: high.
+                Room 215 has a broken shower head. Guest arriving at 3pm, please inspect and repair before 2pm. Priority: high.
               </div>
               <div className="flex gap-2">
                 <ActionButton variant="primary" className="flex-1" onClick={() => { setShowDraft(false); setStep("issue-sent"); }}>Confirm & send</ActionButton>

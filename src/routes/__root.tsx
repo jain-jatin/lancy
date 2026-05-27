@@ -72,7 +72,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lancy — Housekeeping Copilot" },
+      { title: "Lancy: Housekeeping Copilot" },
       { name: "description", content: "Lancy helps housekeeping supervisors run a smoother shift." },
       { property: "og:title", content: "Lancy" },
       { property: "og:description", content: "Housekeeping copilot for hotel supervisors." },
