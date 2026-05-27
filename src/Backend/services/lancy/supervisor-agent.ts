@@ -140,6 +140,51 @@ export const supervisorAgent = {
       };
     }
 
+    // ROOM STATUS - Full room state report
+    if (
+      cleanMsg.includes("state of all rooms") ||
+      cleanMsg.includes("room status") ||
+      cleanMsg.includes("all rooms") ||
+      cleanMsg.includes("current state") ||
+      cleanMsg.includes("room states") ||
+      cleanMsg.includes("status of rooms") ||
+      cleanMsg.includes("show rooms") ||
+      cleanMsg.includes("how are the rooms")
+    ) {
+      const grouped: Record<string, typeof rooms> = {};
+      for (const r of rooms) {
+        const key = r.status;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(r);
+      }
+
+      // Ordered display: dirty first, then active work, then pending, then done
+      const statusOrder = ["dirty", "inspection", "cleaning", "review", "blocked", "ready", "occupied"];
+      const statusLabels: Record<string, string> = {
+        dirty: "Dirty (Awaiting Turnaround)",
+        inspection: "Inspection In Progress",
+        cleaning: "Cleaning In Progress",
+        review: "Review Pending (Marcus)",
+        blocked: "Blocked (Maintenance)",
+        ready: "Ready for Check-in",
+        occupied: "Occupied"
+      };
+
+      let report = `**Room Status at ${simTime}**\n\n`;
+      for (const status of statusOrder) {
+        const group = grouped[status];
+        if (!group || group.length === 0) continue;
+        report += `**${statusLabels[status] || status}** (${group.length})\n`;
+        for (const r of group) {
+          const hkStr = r.attendant ? `, ${r.attendant}` : "";
+          report += `- Room ${r.number} (${r.type}, Fl${r.floor})${hkStr}\n`;
+        }
+        report += "\n";
+      }
+
+      return { reply: report.trim(), buttons: [] };
+    }
+
     if (cleanMsg.includes("next priority") || cleanMsg.includes("deluxe") || cleanMsg.includes("priority")) {
       const dlxRooms = rooms.filter(r => (r.type === 'DLX' || r.type === 'STE') && r.status !== 'ready' && r.status !== 'occupied');
       
@@ -225,7 +270,7 @@ ${housekeepers.map(hk => {
   const arrTime = dbOperations.hkArrivals[hk.name] || '08:00';
   if (arrTime > simTime) return `${hk.name}: NOT YET ARRIVED (arrives ${arrTime})`
   if (!hk.current_room) return `${hk.name}: IDLE (available)`
-  return `${hk.name}: ${hk.current_activity} in Room ${hk.current_room} (10m elapsed)`
+  return `${hk.name}: ${hk.current_activity} in Room ${hk.current_room}`
 }).join('\n')}
 
 PENDING REVIEWS:
@@ -236,6 +281,7 @@ ${rooms.filter(r => r.status === 'review').map(r =>
 RULES:
 - Never use em dashes (—) or double hyphens (--) in your replies. Use commas, colons, or parentheses instead.
 - Respond in 2 sentences maximum unless building a full plan.
+- If asked for room states or status, list every room with its current status.
 - Never mark a room READY without Marcus confirming.
 - Never assign a housekeeper without Marcus confirming.
 - If a room is overdue flag it with the word OVERDUE.
@@ -278,8 +324,19 @@ RULES:
       }
     }
 
+    // Offline fallback: build a useful summary instead of a generic message
+    const dirtyCount = rooms.filter(r => r.status === "dirty").length;
+    const cleaningCount = rooms.filter(r => r.status === "cleaning" || r.status === "inspection").length;
+    const reviewCount = rooms.filter(r => r.status === "review").length;
+    const readyCount = rooms.filter(r => r.status === "ready").length;
+    const blockedCount = rooms.filter(r => r.status === "blocked").length;
+
+    let fallback = `At ${simTime}: ${dirtyCount} dirty, ${cleaningCount} in progress, ${reviewCount} pending review, ${readyCount} ready`;
+    if (blockedCount > 0) fallback += `, ${blockedCount} blocked`;
+    fallback += ".\n\nTry asking: \"current state of all rooms\", \"where is everyone\", \"room turnarounds\", or \"next priority\".";
+
     return {
-      reply: "I'm monitoring the active shift. Let me know if you'd like me to re-sequence any rooms or alert maintenance.",
+      reply: fallback,
       buttons: []
     };
   }
