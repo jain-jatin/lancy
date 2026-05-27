@@ -468,9 +468,10 @@ function LancyApp() {
     ];
 
     // Push action buttons for the simulation time
-    if (time === "07:00" || time === "08:00") {
+    const timeMins = timeToMinutes(time);
+    if (timeMins <= timeToMinutes("08:30")) {
       newExtra.push({
-        id: "simulate-action-08",
+        id: "simulate-action-morning",
         render: () => (
           <div className="flex flex-wrap gap-2 pt-1 animate-fade-in">
             <button
@@ -480,10 +481,16 @@ function LancyApp() {
               Show shift summary
             </button>
             <button
+              onClick={() => onSend("room turnarounds")}
+              className="h-9 px-4 rounded-full border border-amber-600 bg-white text-[13px] font-semibold text-amber-700 active:bg-amber-50 hover:bg-amber-50 transition-all shadow-sm"
+            >
+              Room turnarounds
+            </button>
+            <button
               onClick={() => onSend("where is everyone")}
               className="h-9 px-4 rounded-full border border-indigo-600 bg-white text-[13px] font-semibold text-indigo-700 active:bg-indigo-50 hover:bg-indigo-50 transition-all shadow-sm"
             >
-              Show housekeeper assignments
+              Housekeeper assignments
             </button>
           </div>
         )

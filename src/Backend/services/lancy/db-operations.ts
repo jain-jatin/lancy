@@ -1,5 +1,6 @@
 import { supabase, isRealSupabaseConfigured, mockDb, MockShift } from "../../db/supabase";
 import { Room, Housekeeper } from "@/simulation/data";
+import { continuingRooms } from "@/simulation/engine";
 
 export const dbOperations = {
   hkArrivals: {
@@ -193,6 +194,8 @@ export const dbOperations = {
     // Build room lines with full state
     const roomLines = rooms.map(r => {
       const hk = r.attendant || 'unassigned';
+      const isContinuing = continuingRooms.includes(r.number);
+      const stayType = isContinuing ? 'continuing stay' : 'checkout';
       const flags: string[] = [];
       if (r.earlyCheckIn) flags.push('EARLY CHECK-IN');
       if (r.damageReported) flags.push('DAMAGE REPORTED');
@@ -200,7 +203,7 @@ export const dbOperations = {
       if (r.status === 'blocked') flags.push('BLOCKED');
       if (r.flagged) flags.push('FLAGGED');
       const flagStr = flags.length > 0 ? ` [${flags.join(' | ')}]` : '';
-      return `Room ${r.number} | Floor ${r.floor} | ${r.type} | ${r.status} | ${hk}${flagStr}`;
+      return `Room ${r.number} | Floor ${r.floor} | ${r.type} | ${stayType} | ${r.status} | ${hk}${flagStr}`;
     }).join('\n');
 
     // Build housekeeper lines with arrival awareness
@@ -292,10 +295,16 @@ PENDING REVIEWS:
 ${reviewLines}
 
 TASK DURATIONS (from database):
-- Inspection: 15 minutes (all room types)
+- Inspection: 15 minutes (all room types, checkout rooms only)
 - Cleaning STD: 25 minutes
 - Cleaning DLX: 35 minutes
 - Cleaning STE: 45 minutes
+
+STAYOVER ROOM RULES:
+- Rooms marked "continuing stay" have guests still in residence. NO inspection is allowed on these rooms.
+- Continuing stay rooms get cleaning only (towel/linen refresh, tidying).
+- The standard stayover cleaning window is 10:00 AM to 12:00 PM. If a stayover room is cleaned outside this window, flag it as "early cleaning requested".
+- Checkout rooms get the full inspection + cleaning workflow.
 ${proactiveContext}
 RULES:
 - When Marcus asks for room status, read the LIVE ROOM DATA above and report it directly. Do not say you are monitoring. Do not say let me know if you need anything. Show the actual data.

@@ -1,4 +1,5 @@
 import { Room, Housekeeper } from "@/simulation/data";
+import { continuingRooms } from "@/simulation/engine";
 import { apiClient } from "./api-client";
 import { dbOperations } from "./db-operations";
 import { workflowEngine } from "./workflow-engine";
@@ -131,6 +132,7 @@ export const supervisorAgent = {
     if (cleanMsg.includes("room turnarounds") || cleanMsg.includes("turnarounds") || cleanMsg.includes("go to room turnarounds")) {
       const cleaningDurations: Record<string, number> = { STD: 25, DLX: 35, STE: 45 };
       const inspectionDuration = 15;
+      const stayoverWindow = { start: 600, end: 720 }; // 10:00 AM - 12:00 PM in minutes
 
       const scheduleLines = housekeepers.map(hk => {
         const assignedRooms = (hk.rooms || []);
@@ -143,9 +145,10 @@ export const supervisorAgent = {
           const room = rooms.find(r => r.number === roomNum);
           const roomType = room?.type || "STD";
           const status = room?.status || "dirty";
+          const isContinuingStay = continuingRooms.includes(roomNum);
 
           // If room is already done, skip time calculation
-          if (status === "ready" || status === "occupied") {
+          if (status === "ready") {
             return `  Room ${roomNum} (${roomType}): Done`;
           }
 
@@ -155,11 +158,19 @@ export const supervisorAgent = {
           const displayH = startH % 12 || 12;
           const startTimeStr = `${displayH}:${startM} ${ampm}`;
 
-          // Advance cursor by inspection + cleaning for this room type
-          const totalDuration = inspectionDuration + (cleaningDurations[roomType] || 25);
-          cursor += totalDuration;
-
-          return `  Room ${roomNum} (${roomType}): starts ${startTimeStr}`;
+          if (isContinuingStay) {
+            // Continuing stay: cleaning only, no inspection
+            const cleanDuration = cleaningDurations[roomType] || 25;
+            const isEarlyCleaning = cursor < stayoverWindow.start || cursor >= stayoverWindow.end;
+            const earlyFlag = isEarlyCleaning ? ", early cleaning requested" : "";
+            cursor += cleanDuration;
+            return `  Room ${roomNum} (${roomType}, continuing stay): cleaning ${startTimeStr}${earlyFlag}`;
+          } else {
+            // Checkout room: inspection + cleaning
+            const totalDuration = inspectionDuration + (cleaningDurations[roomType] || 25);
+            cursor += totalDuration;
+            return `  Room ${roomNum} (${roomType}, checkout): starts ${startTimeStr}`;
+          }
         });
 
         return `- **${hk.name}**\n${roomLines.join("\n")}`;
