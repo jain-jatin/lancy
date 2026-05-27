@@ -131,11 +131,11 @@ export const supervisorAgent = {
     if (cleanMsg.includes("room turnarounds") || cleanMsg.includes("turnarounds") || cleanMsg.includes("go to room turnarounds")) {
       return {
         reply: `Today's Room Turnarounds Schedule:
-- **Ana**: Room 201 next (08:00)
-- **Rosa**: Room 204 next (08:00)
-- **James**: Room 302 next (08:00)
-- **Priya**: Room 305 next (08:00)
-- **Sofia**: Room 403 next (08:15)`,
+- **Ana**: Room 201 (08:00)
+- **Rosa**: Room 204 (08:00)
+- **James**: Room 302 (08:00)
+- **Priya**: Room 305 (08:00)
+- **Sofia**: Room 403 (08:15)`,
         buttons: []
       };
     }
