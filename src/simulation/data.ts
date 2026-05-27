@@ -28,6 +28,7 @@ export interface Housekeeper {
   current_activity?: "INSPECTION" | "CLEANING" | null;
   rooms_completed?: string[];
   next_room?: string | null;
+  status?: "PRESENT" | "ABSENT" | "IDLE" | "INSPECTION" | "CLEANING" | "Not Arrived";
 }
 
 export const housekeepers: Housekeeper[] = [

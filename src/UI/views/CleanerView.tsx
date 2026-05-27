@@ -16,6 +16,7 @@ interface Props {
   selectedTime: string;
   chatMap: Record<string, Msg[]>;
   onHousekeeperChat: (hkName: string, text: string) => Promise<void>;
+  hkStatus?: string;
 }
 
 const HOUSEKEEPER_ARRIVALS: Record<string, string> = {
@@ -38,7 +39,7 @@ const suggestedPrompts = [
   "AC is not working in the room",
 ];
 
-export function CleanerView({ roomsList, onUpdateRoomStatus, activeHkName, selectedTime, chatMap, onHousekeeperChat }: Props) {
+export function CleanerView({ roomsList, onUpdateRoomStatus, activeHkName, selectedTime, chatMap, onHousekeeperChat, hkStatus }: Props) {
   const active: Housekeeper = housekeepers.find((h) => h.name === activeHkName) ?? housekeepers[0];
 
   const timeToMins = (t: string) => {
@@ -55,6 +56,20 @@ export function CleanerView({ roomsList, onUpdateRoomStatus, activeHkName, selec
   const handleUser = async (text: string) => {
     await onHousekeeperChat(active.name, text);
   };
+
+  if (hkStatus === "ABSENT") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-[#FEF2F2]">
+        <div className="text-center space-y-3 p-6 bg-white rounded-2xl border border-red-200 shadow-sm max-w-[280px]">
+          <div className="text-[40px]">🤒</div>
+          <h3 className="text-[15px] font-bold text-red-700">{active.name} is Absent today</h3>
+          <p className="text-[12px] text-muted-foreground leading-relaxed">
+            Reported sick/absent. Shifts and chat interface are locked. Rooms are being reassigned by Marcus.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!hasArrived) {
     return (

@@ -190,7 +190,7 @@ export interface SimState {
   }>;
   housekeepers: Record<string, {
     name: string;
-    status: "Inspecting" | "Cleaning" | "Available" | "Not Arrived";
+    status: "Inspecting" | "Cleaning" | "Available" | "Not Arrived" | "ABSENT";
     currentRoom?: string;
     startedAt?: string;
     elapsed?: number;

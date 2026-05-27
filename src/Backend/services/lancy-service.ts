@@ -218,6 +218,93 @@ export const lancyService = {
     return h * 60 + m;
   },
 
+  async generateHousekeeperGreeting(hk: Housekeeper, rooms: Room[], simTime: string): Promise<string> {
+    const assignedRoomNums = hk.rooms || [];
+    const assignedRooms = rooms
+      .filter(r => assignedRoomNums.includes(r.number))
+      .sort((a, b) => a.number.localeCompare(b.number));
+
+    const remainingRooms = assignedRooms.filter(r =>
+      r.status === 'dirty' || r.status === 'inspection' || r.status === 'cleaning'
+    );
+
+    const isMidTask = hk.current_room && (hk.current_activity === "INSPECTION" || hk.current_activity === "CLEANING");
+
+    // Try calling Gemini first
+    const client = getGeminiClient();
+    if (client) {
+      try {
+        const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const prompt = `
+Greet ${hk.name} warmly by name.
+Current simulation time is ${simTime}.
+
+Tell them their task list in priority order.
+For each room include:
+  - Room number and type
+  - What the task is (Inspection or Cleaning)
+  - Target completion time (estimate based on current time or subsequent 45m slots)
+
+Format example:
+"Good morning Ana! Here is your list for today:
+
+Room 201 (Standard) - Inspection - finish by 10:30 AM
+Room 202 (Standard) - Cleaning - finish by 11:30 AM
+Room 203 (Deluxe) - Cleaning - finish by 12:30 PM
+Room 502 (Standard) - Cleaning (continuing stay, lower priority)
+
+Start with Room ${remainingRooms[0]?.number || 'None'}. 
+Let me know when you are inside."
+
+If they are mid-task already (based on simulation state):
+"Welcome back ${hk.name}. You are currently ${hk.current_activity === 'INSPECTION' ? 'inspecting' : 'cleaning'} Room ${hk.current_room}. 
+Estimated completion: ${simTime}. 
+After that: Room Y."
+
+Keep it short. One greeting line then the list. 
+No long paragraphs.
+`;
+        const res = await model.generateContent(prompt);
+        const text = res.response.text().trim();
+        if (text) return text;
+      } catch (err) {
+        console.error("Gemini greeting failed, using local builder:", err);
+      }
+    }
+
+    // High fidelity deterministic fallback
+    if (isMidTask) {
+      const nextRoom = remainingRooms.find(r => r.number !== hk.current_room);
+      return `Welcome back ${hk.name}. You are currently ${hk.current_activity === 'INSPECTION' ? 'inspecting' : 'cleaning'} Room ${hk.current_room}.
+Estimated completion: ${simTime}.
+After that: ${nextRoom ? 'Room ' + nextRoom.number : 'none'}.`;
+    }
+
+    if (remainingRooms.length === 0) {
+      return `Good morning ${hk.name}! All your assigned rooms have been completed. Great job today!`;
+    }
+
+    let roomLines = "";
+    remainingRooms.forEach((r, idx) => {
+      const taskType = r.status === 'inspection' ? 'Inspection' : 'Cleaning';
+      // simple slots: 1h per room
+      const currentMin = this.timeToMins(simTime);
+      const targetMin = currentMin + (idx + 1) * 60;
+      const targetHours = Math.floor(targetMin / 60) % 24;
+      const targetMins = String(targetMin % 60).padStart(2, '0');
+      const ampm = targetHours >= 12 ? 'PM' : 'AM';
+      const displayHours = targetHours % 12 || 12;
+      const targetTimeStr = `${displayHours}:${targetMins} ${ampm}`;
+
+      roomLines += `Room ${r.number} (${r.type}) - ${taskType} - finish by ${targetTimeStr}\n`;
+    });
+
+    return `Good morning ${hk.name}! Here is your list for today:
+
+${roomLines}
+Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
+  },
+
   async assignHousekeeperRoom(hkName: string, roomNum: string) {
     const hk = (await lancyService.getHousekeepers()).find(h => h.name === hkName);
     if (!hk) return;
@@ -552,6 +639,15 @@ RULES:
 
     // TRACK 1 - Deterministic Housekeeper Intent Matching Fallback
     const fallbackHandler = async () => {
+      if (cleanMsg.includes("sick") || cleanMsg.includes("cannot come") || cleanMsg.includes("not feeling well") || cleanMsg.includes("cannot make it") || cleanMsg.includes("won't be able") || cleanMsg.includes("can't make")) {
+        await lancyService.updateHousekeeper(hk.name, { status: "ABSENT" });
+        return "I am sorry to hear that. I hope you feel better soon. I have let Marcus know and will sort out your rooms.";
+      }
+
+      if (cleanMsg.includes("late") || cleanMsg.includes("running late")) {
+        return `I will let Marcus know you are running late. Your rooms will wait for your arrival, and I'll help you check in.`;
+      }
+
       if (cleanMsg.includes("all good") || cleanMsg.includes("items ok") || cleanMsg.includes("nothing missing") || cleanMsg.includes("checked everything") || cleanMsg.includes("room is clear")) {
         if (hk.current_room) {
           await lancyService.updateHousekeeper(hk.name, { current_activity: "INSPECTION" });
@@ -579,7 +675,7 @@ RULES:
         if (hk.current_room) {
           await lancyService.updateRoomStatus(hk.current_room, "dirty", { damageReported: true });
         }
-        return "Understood. I have stored this and relayed it to reception. The guest will be notified. Continue with your work.";
+        return `Got it, logging that for Room ${hk.current_room || 'your room'}. Reception has been notified.`;
       }
 
       if (cleanMsg.includes("ac") || cleanMsg.includes("leak") || cleanMsg.includes("pipe") || cleanMsg.includes("tv") || cleanMsg.includes("light") || cleanMsg.includes("flood") || cleanMsg.includes("electrical")) {
@@ -596,17 +692,39 @@ RULES:
     };
 
     // TRACK 2 - Gemini Housekeeper LLM Chat
+    const buildFullHousekeeperContext = (housekeeper: Housekeeper, allRooms: Room[], simTime: string) => `
+  You are Lancy. You are speaking with ${housekeeper.name}.
+  
+  WHAT YOU KNOW ABOUT ${housekeeper.name.toUpperCase()}:
+  Status: ${housekeeper.status || 'PRESENT'} (PRESENT / ABSENT / IDLE / INSPECTION / CLEANING)
+  Current room: ${housekeeper.current_room || 'none'}
+  Current activity: ${housekeeper.current_activity || 'idle'}
+  Rooms completed today: ${(housekeeper.rooms_completed || []).join(', ') || 'none yet'}
+  Remaining queue: ${(housekeeper.rooms || []).filter(r => !(housekeeper.rooms_completed || []).includes(r)).join(', ') || 'all done'}
+  
+  FULL HOTEL CONTEXT:
+  Simulation time: ${simTime}
+  Total rooms ready: ${allRooms.filter(r => r.status === 'ready').length}
+  Total rooms remaining: ${allRooms.filter(r => r.status !== 'ready' && r.status !== 'occupied').length}
+  
+  YOU ALWAYS KNOW:
+  - Which room ${housekeeper.name} is currently in (no need for them to tell you)
+  - What task they are doing (inspection or cleaning)
+  - What their next room is
+  - How long they have been in the current room
+  - Whether they are running on time or behind
+  
+  NEVER ask ${housekeeper.name} which room they are in.
+  NEVER ask them what they are doing.
+  You already know. Reference it naturally in responses.
+  
+  Example: if James says "found something here"
+  You say: "Got it, logging that for Room 303." 
+  Not: "Which room are you in?"
+`;
+
     const systemPrompt = `
-You are Lancy, AI assistant and operations partner for ${hk.name} at Maplewood Suites. Respond in English only.
-
-CURRENT ASSIGNMENT:
-${currentRoom
-  ? `Room ${currentRoom.number} (${currentRoom.type}, Floor ${currentRoom.floor})`
-  : 'No room assigned right now.'}
-
-CURRENT ACTIVITY: ${hk.current_activity || 'IDLE'}
-ROOMS COMPLETED TODAY: ${(hk.rooms_completed || []).join(', ') || 'None yet'}
-NEXT ROOM IN QUEUE: ${hk.next_room || 'None'}
+${buildFullHousekeeperContext(hk, rooms, '10:00')}
 
 INTENT DETECTION — use tools based on these instructions:
 
@@ -633,6 +751,10 @@ INTENT DETECTION — use tools based on these instructions:
 6. NEED SUPERVISOR IN PERSON:
    Phrases: "need Marcus", "come here", "supervisor please"
    Action: Call notify_supervisor with card_type="URGENT".
+
+7. ABSENCE / SICK / LATE REPORTING:
+   Phrases: "I am sick", "I cannot come", "I am not feeling well", "I will be late", "I cannot make it today", "I am running late"
+   Action: If they are sick or cannot come, set their status to ABSENT. Respond with "I am sorry to hear that. I hope you feel better soon. I have let Marcus know and will sort out your rooms."
 
 NEVER fabricate room numbers. Always use the room from the database.
 Respond in 2 sentences maximum.

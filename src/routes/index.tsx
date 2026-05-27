@@ -12,7 +12,7 @@ import { RoomsView } from "@/UI/views/RoomsView";
 import { CleanerView } from "@/UI/views/CleanerView";
 import { Room, housekeepers, Housekeeper } from "@/simulation/data";
 import { lancyService } from "@/Backend/services/lancy-service";
-import { compileSimulation, timeToMinutes } from "@/simulation/engine";
+import { compileSimulation, timeToMinutes, HK_ARRIVALS } from "@/simulation/engine";
 import { AppSelect } from "@/UI/components/AppSelect";
 
 export const Route = createFileRoute("/")({ component: LancyApp });
@@ -78,11 +78,168 @@ function LancyApp() {
   const [simState, setSimState] = useState(() => compileSimulation("08:00"));
   const roomsList = Object.values(simState.rooms);
 
+  // Proactive greeting on selection change
+  useEffect(() => {
+    const triggerProactiveGreeting = async () => {
+      const currentMins = timeToMinutes(selectedTime);
+      const arrivalTimeStr = HK_ARRIVALS[activeHkName] || "08:00";
+      const hasArrived = currentMins >= timeToMinutes(arrivalTimeStr);
+
+      if (!hasArrived) {
+        setHkChatMap((prev) => ({
+          ...prev,
+          [activeHkName]: [
+            {
+              id: "init-" + activeHkName,
+              from: "lancy",
+              text: `${activeHkName} has not arrived yet (arrives at ${arrivalTimeStr}).`
+            }
+          ]
+        }));
+        return;
+      }
+
+      // Check if already absent
+      const dbHks = await lancyService.getHousekeepers();
+      const hk = dbHks.find((h) => h.name === activeHkName);
+      if (hk && hk.status === "ABSENT") {
+        setHkChatMap((prev) => ({
+          ...prev,
+          [activeHkName]: [
+            {
+              id: "init-" + activeHkName,
+              from: "lancy",
+              text: `${activeHkName} is ABSENT today.`
+            }
+          ]
+        }));
+        return;
+      }
+
+      // Rebuild greeting using current simulation state
+      const dbRooms = await lancyService.getRooms();
+      if (hk) {
+        const greeting = await lancyService.generateHousekeeperGreeting(hk, dbRooms, selectedTime);
+        setHkChatMap((prev) => {
+          const currentMsgs = prev[activeHkName] || [];
+          const hasUserSpoken = currentMsgs.some((m) => m.from === "hk");
+          if (hasUserSpoken) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [activeHkName]: [
+              {
+                id: "init-" + activeHkName,
+                from: "lancy",
+                text: greeting,
+              }
+            ]
+          };
+        });
+      }
+    };
+
+    triggerProactiveGreeting();
+  }, [activeHkName, selectedTime]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const onSendRef = useRef<(text: string) => Promise<void>>(async () => {});
 
   const pushMsg = (node: React.ReactNode, id: string = crypto.randomUUID()) =>
     setExtra((p) => [...p, { id, render: () => node }]);
+
+  const handleAutoReassign = async (absentHkName: string, roomsToReassign: string[]) => {
+    const dbHks = await lancyService.getHousekeepers();
+    const dbRooms = await lancyService.getRooms();
+
+    const presentHks = dbHks.filter((h) => h.name !== absentHkName && h.status !== "ABSENT");
+    const assignmentsMade: Array<{ room: string; hk: string }> = [];
+
+    for (const roomNum of roomsToReassign) {
+      const roomObj = dbRooms.find((r) => r.number === roomNum);
+      if (!roomObj) continue;
+
+      const candidateHks = presentHks.filter((h) => {
+        const assignedCount = dbRooms.filter((r) => r.attendant === h.name).length;
+        return assignedCount < 4;
+      });
+
+      if (candidateHks.length === 0) {
+        presentHks.sort((a, b) => {
+          const aCount = dbRooms.filter((r) => r.attendant === a.name).length;
+          const bCount = dbRooms.filter((r) => r.attendant === b.name).length;
+          return aCount - bCount;
+        });
+        const bestHk = presentHks[0];
+        if (bestHk) {
+          await lancyService.updateRoomStatus(roomNum, "dirty", { attendant: bestHk.name });
+          assignmentsMade.push({ room: roomNum, hk: bestHk.name });
+        }
+      } else {
+        candidateHks.sort((a, b) => {
+          const aRooms = dbRooms.filter((r) => r.attendant === a.name);
+          const bRooms = dbRooms.filter((r) => r.attendant === b.name);
+          const aFloor = aRooms.length > 0 ? aRooms[0].floor : 1;
+          const bFloor = bRooms.length > 0 ? bRooms[0].floor : 1;
+          return Math.abs(aFloor - roomObj.floor) - Math.abs(bFloor - roomObj.floor);
+        });
+
+        const bestHk = candidateHks[0];
+        await lancyService.updateRoomStatus(roomNum, "dirty", { attendant: bestHk.name });
+        assignmentsMade.push({ room: roomNum, hk: bestHk.name });
+      }
+    }
+
+    pushMsg(
+      <LancyBubble>
+        <div className="flex items-start gap-2">
+          <div className="text-[14px]">📋</div>
+          <div className="text-[13px] leading-relaxed">
+            <span className="font-bold text-emerald-800">Rooms Reassigned (Floors-Proximity)</span>
+            <div className="mt-1.5 space-y-1">
+              {assignmentsMade.length > 0 ? (
+                assignmentsMade.map((asg) => (
+                  <div key={asg.room}>Room {asg.room} reassigned to <span className="font-semibold text-emerald-700">{asg.hk}</span></div>
+                ))
+              ) : (
+                <div className="text-muted-foreground">No rooms needed reassignment.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </LancyBubble>
+    );
+
+    // Sync up state
+    const freshRooms = await lancyService.getRooms();
+    const freshHks = await lancyService.getHousekeepers();
+    setSimState((prev) => {
+      const updatedRooms = { ...prev.rooms };
+      freshRooms.forEach((r) => {
+        if (updatedRooms[r.number]) {
+          updatedRooms[r.number] = { ...updatedRooms[r.number], ...r };
+        }
+      });
+      const updatedHks = { ...prev.housekeepers };
+      freshHks.forEach((h) => {
+        if (updatedHks[h.name]) {
+          updatedHks[h.name] = {
+            ...updatedHks[h.name],
+            status: h.status === "ABSENT" ? "ABSENT" : (h.current_activity === "INSPECTION" ? "Inspecting" : h.current_activity === "CLEANING" ? "Cleaning" : "Available"),
+            currentRoom: h.current_room || undefined,
+            completed: h.rooms_completed || [],
+            nextInQueue: h.next_room || "None",
+          };
+        }
+      });
+      return {
+        ...prev,
+        rooms: updatedRooms,
+        housekeepers: updatedHks,
+      };
+    });
+  };
 
   const handleHousekeeperChat = async (hkName: string, text: string) => {
     const msgId = crypto.randomUUID();
@@ -113,7 +270,7 @@ function LancyApp() {
         if (updatedHks[h.name]) {
           updatedHks[h.name] = {
             ...updatedHks[h.name],
-            status: h.current_activity === "INSPECTION" ? "Inspecting" : h.current_activity === "CLEANING" ? "Cleaning" : "Available",
+            status: h.status === "ABSENT" ? "ABSENT" : (h.current_activity === "INSPECTION" ? "Inspecting" : h.current_activity === "CLEANING" ? "Cleaning" : "Available"),
             currentRoom: h.current_room || undefined,
             completed: h.rooms_completed || [],
             nextInQueue: h.next_room || "None",
@@ -127,31 +284,91 @@ function LancyApp() {
       };
     });
 
-    let alertMsg = "";
     const cleanText = text.toLowerCase();
-    if (cleanText.includes("damage") || cleanText.includes("broken") || cleanText.includes("mirror")) {
-      alertMsg = `⚠️ **Damage Alert from ${hkName}:** Reported a broken item/mirror ("${text}"). Reception has been notified.`;
-    } else if (cleanText.includes("done") || cleanText.includes("finished") || cleanText.includes("complete") || cleanText.includes("room ready")) {
-      alertMsg = `✅ **Task Completed by ${hkName}:** Completed cleaning their assigned room. Review is pending sign-off.`;
-    } else if (cleanText.includes("all good") || cleanText.includes("items ok") || cleanText.includes("clear")) {
-      alertMsg = `📋 **Status Update from ${hkName}:** Room is clear. Started inspection turnaround.`;
-    } else if (cleanText.includes("ac") || cleanText.includes("leak") || cleanText.includes("pipe") || cleanText.includes("tv") || cleanText.includes("light")) {
-      alertMsg = `🔧 **Maintenance Request from ${hkName}:** Reported issue ("${text}"). Work order logged.`;
-    } else {
-      alertMsg = `💬 **Update from ${hkName}:** "${text}"\nLancy replied: "${reply}"`;
+    const isSickReport = cleanText.includes("sick") || cleanText.includes("cannot come") || cleanText.includes("not feeling well") || cleanText.includes("cannot make it") || cleanText.includes("won't be able") || cleanText.includes("can't make");
+    const isLateReport = cleanText.includes("late") || cleanText.includes("running late");
+
+    if (isSickReport) {
+      const unfinishedRooms = dbRooms
+        .filter((r) => r.attendant === hkName && r.status !== "ready")
+        .map((r) => r.number);
+
+      const cardId = crypto.randomUUID();
+      pushMsg(
+        <div className="max-w-[88%] rounded-[14px] bg-white border border-red-200 shadow-card p-3.5 mt-1 animate-fade-in" key={cardId}>
+          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-red-600 mb-1.5">
+            🚨 DECISION REQUIRED
+          </div>
+          <div className="text-[13px] font-bold text-foreground mb-1">{hkName} reported absent</div>
+          <div className="text-[12px] text-muted-foreground mb-3 leading-relaxed">
+            <strong>{hkName} says:</strong> "{text}". They have {unfinishedRooms.length} remaining rooms in their queue: {unfinishedRooms.join(', ') || 'none'}. How would you like to reassign?
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={async () => {
+                await handleAutoReassign(hkName, unfinishedRooms);
+                toast.success(`Reassigned remaining rooms for ${hkName}!`);
+              }}
+              className="h-8 px-3 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold active:scale-95 transition-all shadow-sm"
+            >
+              Reassign to Available HK
+            </button>
+            <button
+              onClick={() => {
+                toast.info("Absence acknowledged. You can reassign rooms manually in the Rooms tab.");
+              }}
+              className="h-8 px-3 rounded-lg border border-border hover:bg-secondary text-foreground text-[11px] font-bold active:scale-95 transition-all"
+            >
+              I will handle manually
+            </button>
+          </div>
+        </div>,
+        cardId
+      );
     }
 
-    pushMsg(
-      <LancyBubble>
-        <div className="flex items-start gap-2">
-          <div className="text-[14px]">🔔</div>
-          <div className="text-[13px] leading-relaxed">
-            <span className="font-bold text-emerald-800">Lancy Attendant Update</span>
-            <div className="mt-1 text-foreground" dangerouslySetInnerHTML={{ __html: alertMsg.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+    if (isLateReport) {
+      pushMsg(
+        <LancyBubble>
+          <div className="flex items-start gap-2">
+            <div className="text-[14px]">⏳</div>
+            <div className="text-[13px] leading-relaxed">
+              <span className="font-bold text-amber-700">Lancy Attendant Update</span>
+              <div className="mt-1 text-foreground">
+                <strong>{hkName}</strong> reported that they will be late. Their rooms are unassigned until they arrive. Lancy will auto-assign their first room as soon as they check in.
+              </div>
+            </div>
           </div>
-        </div>
-      </LancyBubble>
-    );
+        </LancyBubble>
+      );
+    }
+
+    let alertMsg = "";
+    if (cleanText.includes("damage") || cleanText.includes("broken") || cleanText.includes("mirror")) {
+      alertMsg = `⚠️ **Damage Alert from ${hkName}:** Reported a broken item/mirror ("${text}"). Reception has been notified.`;
+    } else if (cleanText.includes("sick") || cleanText.includes("leave") || cleanText.includes("fever") || cleanText.includes("cannot make") || cleanText.includes("won't be able") || cleanText.includes("can't make")) {
+      alertMsg = `🚨 **Absence Alert:** ${hkName} reported sick and won't be able to complete their shift today.`;
+    } else if (cleanText.includes("done") || cleanText.includes("finished") || cleanText.includes("complete") || cleanText.includes("room ready")) {
+      alertMsg = `✅ **Task Completed by ${hkName}:** Completed cleaning their assigned room. Review is pending sign-off.`;
+    } else if (cleanText.includes("ac") || cleanText.includes("leak") || cleanText.includes("pipe") || cleanText.includes("tv") || cleanText.includes("light") || cleanText.includes("flood") || cleanText.includes("electrical")) {
+      alertMsg = `🔧 **Maintenance Request from ${hkName}:** Reported issue ("${text}"). Work order logged.`;
+    } else if (cleanText.includes("marcus") || cleanText.includes("come") || cleanText.includes("supervisor")) {
+      alertMsg = `🚨 **Urgent Alert:** ${hkName} requested your presence in-person at their current room.`;
+    }
+
+    if (alertMsg) {
+      pushMsg(
+        <LancyBubble>
+          <div className="flex items-start gap-2">
+            <div className="text-[14px]">🔔</div>
+            <div className="text-[13px] leading-relaxed">
+              <span className="font-bold text-emerald-800">Lancy Attendant Update</span>
+              <div className="mt-1 text-foreground" dangerouslySetInnerHTML={{ __html: alertMsg.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+            </div>
+          </div>
+        </LancyBubble>
+      );
+    }
   };
 
   const handleSimulate = async (time: string) => {
@@ -534,6 +751,7 @@ function LancyApp() {
               selectedTime={selectedTime}
               chatMap={hkChatMap}
               onHousekeeperChat={handleHousekeeperChat}
+              hkStatus={simState.housekeepers[activeHkName]?.status}
             />
           )}
         </div>
