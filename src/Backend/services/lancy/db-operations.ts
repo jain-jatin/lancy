@@ -209,7 +209,8 @@ export const dbOperations = {
     // Build housekeeper lines with arrival awareness
     const hkLines = housekeepers.map(h => {
       const arrTime = this.hkArrivals[h.name] || '08:00';
-      const arrived = currentMins >= this.timeToMins(arrTime);
+      const checkedIn = h.status === 'PRESENT' || h.status === 'IDLE' || h.status === 'INSPECTION' || h.status === 'CLEANING';
+      const arrived = currentMins >= this.timeToMins(arrTime) || checkedIn;
       if (h.status === 'ABSENT') return `${h.name}: ABSENT`;
       if (!arrived) return `${h.name}: NOT YET ARRIVED (arrives ${arrTime})`;
       if (!h.current_room) return `${h.name}: IDLE (available)`;

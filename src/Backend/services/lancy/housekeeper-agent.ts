@@ -30,6 +30,35 @@ export const housekeeperAgent = {
       return reply;
     }
 
+    // Early Shift Check-in Check
+    const shift = await dbOperations.getShift();
+    const simTime = shift.time;
+    const currentMins = dbOperations.timeToMins(simTime);
+    const arrivalTimeStr = dbOperations.hkArrivals[hk.name] || "08:00";
+    const scheduledMins = dbOperations.timeToMins(arrivalTimeStr);
+    const isBelowStart = currentMins < scheduledMins;
+
+    const checkedIn = hk.status === 'PRESENT' || hk.status === 'IDLE' || hk.status === 'INSPECTION' || hk.status === 'CLEANING';
+
+    if (isBelowStart && !checkedIn) {
+      if (cleanMsg.includes("yes") || cleanMsg.includes("start") || cleanMsg.includes("ready")) {
+        // 1. Make housekeeper present/available
+        await dbOperations.updateHousekeeper(hk.name, { status: "PRESENT" });
+
+        // 2. Notify Marcus
+        await dbOperations.addMessage("lancy", "Lancy", `🚨 **Attendant Arrival:** ${hk.name} has arrived early and started their shift at ${simTime}.`);
+
+        // 3. Greet and display their task list
+        const greeting = await workflowEngine.generateHousekeeperGreeting(hk, rooms, simTime);
+        await dbOperations.addMessage("lancy", "Lancy", greeting);
+        return greeting;
+      } else {
+        const askCheckIn = `Good morning, ${hk.name}. Your shift is scheduled to start at ${arrivalTimeStr}. Do you want to start your shift now?`;
+        await dbOperations.addMessage("lancy", "Lancy", askCheckIn);
+        return askCheckIn;
+      }
+    }
+
     // TRACK 1 - Deterministic Housekeeper Intent Matching Fallback
     const fallbackHandler = async () => {
       if (cleanMsg.includes("late") || cleanMsg.includes("running late")) {

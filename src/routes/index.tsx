@@ -85,7 +85,11 @@ function LancyApp() {
     const triggerProactiveGreeting = async () => {
       const currentMins = timeToMinutes(selectedTime);
       const arrivalTimeStr = HK_ARRIVALS[activeHkName] || "08:00";
-      const hasArrived = currentMins >= timeToMinutes(arrivalTimeStr);
+      
+      const dbHks = await lancyService.getHousekeepers();
+      const hk = dbHks.find((h) => h.name === activeHkName);
+      const hasCheckedIn = hk && hk.status && hk.status !== "Not Arrived" && hk.status !== "ABSENT";
+      const hasArrived = currentMins >= timeToMinutes(arrivalTimeStr) || hasCheckedIn;
 
       if (!hasArrived) {
         setHkChatMap((prev) => ({
@@ -94,7 +98,7 @@ function LancyApp() {
             {
               id: "init-" + activeHkName,
               from: "lancy",
-              text: `${activeHkName} has not arrived yet (arrives at ${arrivalTimeStr}).`
+              text: `Good morning, ${activeHkName}. Your shift is scheduled to start at ${arrivalTimeStr}. Do you want to start your shift now?`
             }
           ]
         }));
@@ -102,8 +106,6 @@ function LancyApp() {
       }
 
       // Check if already absent
-      const dbHks = await lancyService.getHousekeepers();
-      const hk = dbHks.find((h) => h.name === activeHkName);
       if (hk && hk.status === "ABSENT") {
         setHkChatMap((prev) => ({
           ...prev,
