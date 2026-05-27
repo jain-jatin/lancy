@@ -61,6 +61,16 @@ export const workflowEngine = {
 
     const isMidTask = hk.current_room && (hk.current_activity === "INSPECTION" || hk.current_activity === "CLEANING");
 
+    let estCompletionTime = simTime;
+    if (isMidTask) {
+      const currentMin = dbOperations.timeToMins(simTime);
+      const duration = hk.current_activity === "INSPECTION" ? 15 : 45;
+      const targetMin = currentMin + duration;
+      const targetHours = Math.floor(targetMin / 60) % 24;
+      const targetMins = String(targetMin % 60).padStart(2, "0");
+      estCompletionTime = `${String(targetHours).padStart(2, "0")}:${targetMins}`;
+    }
+
     // Try calling Gemini first
     const client = apiClient.getGeminiClient();
     if (client) {
@@ -89,7 +99,7 @@ Let me know when you are inside."
 
 If they are mid-task already (based on simulation state):
 "Welcome back ${hk.name}. You are currently ${hk.current_activity === 'INSPECTION' ? 'inspecting' : 'cleaning'} Room ${hk.current_room}. 
-Estimated completion: ${simTime}. 
+Estimated completion: ${estCompletionTime}. 
 After that: Room Y."
 
 Keep it short. One greeting line then the list. 
@@ -108,7 +118,7 @@ No long paragraphs.
     if (isMidTask) {
       const nextRoom = remainingRooms.find(r => r.number !== hk.current_room);
       return `Welcome back ${hk.name}. You are currently ${hk.current_activity === 'INSPECTION' ? 'inspecting' : 'cleaning'} Room ${hk.current_room}.
-Estimated completion: ${simTime}.
+Estimated completion: ${estCompletionTime}.
 After that: ${nextRoom ? 'Room ' + nextRoom.number : 'none'}.`;
     }
 

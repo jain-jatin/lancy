@@ -129,23 +129,36 @@ export const supervisorAgent = {
     }
 
     if (cleanMsg.includes("room turnarounds") || cleanMsg.includes("turnarounds") || cleanMsg.includes("go to room turnarounds")) {
+      const scheduleLines = housekeepers.map(hk => {
+        const firstRoom = hk.rooms && hk.rooms.length > 0 ? hk.rooms[0] : "None";
+        const arrTime = dbOperations.hkArrivals[hk.name] || "08:00";
+        return `- **${hk.name}**: Room ${firstRoom} (${arrTime})`;
+      }).join("\n");
       return {
-        reply: `Today's Room Turnarounds Schedule:
-- **Ana**: Room 201 (08:00)
-- **Rosa**: Room 204 (08:00)
-- **James**: Room 302 (08:00)
-- **Priya**: Room 305 (08:00)
-- **Sofia**: Room 403 (08:15)`,
+        reply: `Today's Room Turnarounds Schedule:\n${scheduleLines}`,
         buttons: []
       };
     }
 
     if (cleanMsg.includes("next priority") || cleanMsg.includes("deluxe") || cleanMsg.includes("priority")) {
+      const dlxRooms = rooms.filter(r => (r.type === 'DLX' || r.type === 'STE') && r.status !== 'ready' && r.status !== 'occupied');
+      
+      // Sort deluxe rooms: early check-in or priority first
+      dlxRooms.sort((a, b) => {
+        const priorityA = a.earlyCheckIn || a.priority ? 1 : 0;
+        const priorityB = b.earlyCheckIn || b.priority ? 1 : 0;
+        return priorityB - priorityA;
+      });
+
+      const priorityLines = dlxRooms.map(r => {
+        const hkStr = r.attendant ? `${r.attendant} is assigned` : 'Unassigned';
+        const earlyStr = r.earlyCheckIn ? ' (Priority Early Arrival)' : '';
+        const statusLabel = r.status.charAt(0).toUpperCase() + r.status.slice(1);
+        return `- **Room ${r.number}** (${r.type}): ${statusLabel}. ${hkStr}${earlyStr}.`;
+      }).join("\n");
+
       return {
-        reply: `Next Deluxe Turnaround Priorities:
-- **Room 412** (DLX): Dirty. Priority Early Arrival (11:00 AM).
-- **Room 404** (DLX): Dirty. Rosa is assigned (due 10:00 AM).
-- Need to prioritize these Deluxe turnarounds for early check-ins.`,
+        reply: `Next Deluxe Turnaround Priorities:\n${priorityLines || 'All Deluxe rooms are currently clean or occupied.'}\n\nNeed to prioritize these Deluxe turnarounds for early check-ins.`,
         buttons: []
       };
     }
