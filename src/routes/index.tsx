@@ -143,6 +143,43 @@ function LancyApp() {
     triggerProactiveGreeting();
   }, [activeHkName, selectedTime]);
 
+  // Keep React state 100% synchronized with persistent database
+  useEffect(() => {
+    const syncFromDb = async () => {
+      const dbRooms = await lancyService.getRooms();
+      const dbHks = await lancyService.getHousekeepers();
+      setSimState((prev) => {
+        const updatedRooms = { ...prev.rooms };
+        dbRooms.forEach((r) => {
+          if (updatedRooms[r.number]) {
+            updatedRooms[r.number] = {
+              ...updatedRooms[r.number],
+              ...r,
+            };
+          }
+        });
+        const updatedHks = { ...prev.housekeepers };
+        dbHks.forEach((h) => {
+          if (updatedHks[h.name]) {
+            updatedHks[h.name] = {
+              ...updatedHks[h.name],
+              status: h.status === "ABSENT" ? "ABSENT" : (h.current_activity === "INSPECTION" ? "Inspecting" : h.current_activity === "CLEANING" ? "Cleaning" : "Available"),
+              currentRoom: h.current_room || undefined,
+              completed: h.rooms_completed || [],
+              nextInQueue: h.next_room || "None",
+            };
+          }
+        });
+        return {
+          ...prev,
+          rooms: updatedRooms,
+          housekeepers: updatedHks,
+        };
+      });
+    };
+    syncFromDb();
+  }, [selectedTime, tab]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const onSendRef = useRef<(text: string) => Promise<void>>(async () => {});
 
