@@ -376,6 +376,29 @@ Start with Room ${remainingRooms[0]?.number}. Let me know when you are inside.`;
     // Find pending reviews
     const reviews = rooms.filter(r => r.status === "inspection");
 
+    if (simulationTime === "08:00") {
+      return {
+        msg: `Good morning, Marcus! 🌅 Shift starting.\n\nHere is today's overview. We have 15 checkouts to handle and 5 housekeepers scheduled today.\n\nWould you like to see today's shift summary or review assignments?`,
+        recommendations: []
+      };
+    }
+
+    if (simulationTime === "10:00") {
+      let msg = `Hi Marcus! 🕒 We are mid-shift at 10:00.\n\n`;
+      if (reviews.length > 0) {
+        msg += `• REVIEWS: ${reviews.length} rooms are cleaned and waiting for your inspection sign-off.\n`;
+      }
+      const dirtyCount = rooms.filter(r => r.status === "dirty").length;
+      msg += `• STATUS: We have ${dirtyCount} remaining dirty rooms currently in queue.\n`;
+      msg += `• ATTENDANTS: Housekeepers are actively working on their designated floors.\n\n`;
+      msg += `Would you like to view the live housekeeper map, check room turnaround priorities, or review pending tasks?`;
+
+      return {
+        msg,
+        recommendations: []
+      };
+    }
+
     // Build message
     let msg = `Here is where things stand at ${simulationTime}.\n\n`;
 

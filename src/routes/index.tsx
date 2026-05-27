@@ -420,10 +420,49 @@ function LancyApp() {
     const rec = await lancyService.buildAutoRecommendation(time);
 
     // Clear old action buttons
-    setExtra((prev) => prev.filter((item) => item.id !== "greeting-btn" && !item.id.endsWith("-btn")));
+    setExtra((prev) => prev.filter((item) => item.id !== "greeting-btn" && !item.id.endsWith("-btn") && !item.id.startsWith("simulate-action-")));
 
     // Push the text recommendation bubble
     pushMsg(<LancyBubble><div className="whitespace-pre-line">{rec.msg}</div></LancyBubble>);
+
+    // Push action buttons for the simulation time
+    if (time === "08:00") {
+      pushMsg(
+        <div className="flex flex-wrap gap-2 pt-1 animate-fade-in" key="simulate-action-08">
+          <button
+            onClick={() => onSend("Yes, please")}
+            className="h-9 px-4 rounded-full border border-emerald-600 bg-white text-[13px] font-semibold text-emerald-700 active:bg-emerald-50 hover:bg-emerald-50 transition-all shadow-sm"
+          >
+            Show shift summary 📋
+          </button>
+          <button
+            onClick={() => onSend("where is everyone")}
+            className="h-9 px-4 rounded-full border border-indigo-600 bg-white text-[13px] font-semibold text-indigo-700 active:bg-indigo-50 hover:bg-indigo-50 transition-all shadow-sm"
+          >
+            Show housekeeper assignments 🗺️
+          </button>
+        </div>,
+        "simulate-action-08"
+      );
+    } else if (time === "10:00") {
+      pushMsg(
+        <div className="flex flex-wrap gap-2 pt-1 animate-fade-in" key="simulate-action-10">
+          <button
+            onClick={() => onSend("where is everyone")}
+            className="h-9 px-4 rounded-full border border-indigo-600 bg-white text-[13px] font-semibold text-indigo-700 active:bg-indigo-50 hover:bg-indigo-50 transition-all shadow-sm"
+          >
+            Show live housekeeper map 🗺️
+          </button>
+          <button
+            onClick={() => onSend("room turnarounds")}
+            className="h-9 px-4 rounded-full border border-amber-600 bg-white text-[13px] font-semibold text-amber-700 active:bg-amber-50 hover:bg-amber-50 transition-all shadow-sm"
+          >
+            Check turnaround priorities ⚡
+          </button>
+        </div>,
+        "simulate-action-10"
+      );
+    }
 
     // Push inline card recommendations
     if (rec.recommendations && rec.recommendations.length > 0) {
