@@ -214,7 +214,7 @@ function LancyApp() {
                       })
                     );
                     setLatestNudgeMsg(null);
-                    onSend(lbl);
+                    onSendRef.current(lbl);
                   }}
                   className="h-8 px-3.5 rounded-full border border-emerald-600 bg-white text-[12px] font-bold text-emerald-700 active:scale-[0.96] hover:bg-[#E8F5E9]/30 transition-all shadow-sm shrink-0 whitespace-nowrap cursor-pointer"
                 >
