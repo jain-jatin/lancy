@@ -204,8 +204,8 @@
   flex-shrink: 0;
   background: #FFFFFF;
   border-top: 1px solid #E8E5DF;
-  padding-top: 8px;
-  padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  padding-top: 4px;
+  padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
 }
 
 .chat-input-bar {

@@ -19,12 +19,12 @@ export function BottomNav({ active, onChange }: { active: Tab; onChange: (t: Tab
               key={id}
               onClick={() => onChange(id)}
               data-tour={`nav-${id}`}
-              className="flex-1 min-h-[56px] flex flex-col items-center justify-center gap-1 relative transition-colors"
+              className="flex-1 min-h-[46px] flex flex-col items-center justify-center gap-0.5 relative transition-colors"
               style={{ color: isActive ? "#2A9D8F" : "#7C7C8A" }}
             >
-              <Icon size={22} strokeWidth={isActive ? 2.2 : 1.8} />
-              <span className="text-[10px] font-medium">{label}</span>
-              {isActive && <span className="absolute bottom-1 h-[3px] w-[3px] rounded-full bg-accent" />}
+              <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
+              <span className="text-[10px] font-semibold">{label}</span>
+              {isActive && <span className="absolute bottom-0.5 h-[3px] w-[3px] rounded-full bg-accent" />}
             </button>
           );
         })}
