@@ -38,10 +38,10 @@ export const housekeepers: Housekeeper[] = [
 ];
 
 export const statusDot: Record<RoomStatus, string> = {
-  occupied: "bg-[#3B82F6]",
-  dirty: "bg-[#EF4444]",
-  cleaning: "bg-[#6366F1]",
-  ready: "bg-[#10B981]",
+  occupied: "bg-[#60A5FA]",
+  dirty: "bg-[#F87171]",
+  cleaning: "bg-[#818CF8]",
+  ready: "bg-[#34D399]",
 };
 
 export const statusBorder: Record<RoomStatus, string> = {
