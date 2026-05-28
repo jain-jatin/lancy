@@ -2245,65 +2245,66 @@ function LancyApp() {
         </header>
 
         {/* Tab content */}
-        <div className="tab-content animate-fade-in" key={tab}>
-          {tab === "chat" && (
-            <div className="flex-1 min-h-0 flex flex-col bg-background">
-              {/* Chat feed */}
-              <div ref={scrollRef} className="flex-grow flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
-                {/* 1. Dynamic conversational feed */}
-                {extra.map((m) => (
-                  <div key={m.id} className="animate-fade-in">{m.render()}</div>
-                ))}
+        <div className="tab-content animate-fade-in flex-grow flex-1 min-h-0 flex flex-col">
+          {/* Chat Tab */}
+          <div className="flex-grow flex-1 min-h-0 flex flex-col bg-background" style={{ display: tab === "chat" ? "flex" : "none" }}>
+            {/* Chat feed */}
+            <div ref={scrollRef} className="flex-grow flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
+              {/* 1. Dynamic conversational feed */}
+              {extra.map((m) => (
+                <div key={m.id} className="animate-fade-in">{m.render()}</div>
+              ))}
 
-                {/* 2. Real-time active operational scenario cards */}
-                {timeToMinutes(selectedTime) >= timeToMinutes("10:00") && (
-                  <>
-                    {/* Pending Supervisor Reviews Queue */}
-                    {simState.reviewQueue.length > 0 && (
-                      <LancyCard urgency="warning">
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#92400E] mb-1.5">
-                          ⚠️ Supervisor Review Pending
-                        </div>
-                        <div className="text-[13px] text-foreground mb-3">
-                          {simState.reviewQueue.length} room{simState.reviewQueue.length > 1 ? "s" : ""} need{simState.reviewQueue.length === 1 ? "s" : ""} your review.
-                        </div>
-                        <div className="space-y-2">
-                          {simState.reviewQueue.map((rev) => (
-                            <div key={rev.room} className="flex items-center justify-between bg-[#FEF3C7]/40 border border-[#FEF3C7] rounded-xl p-3 text-[12px] shadow-sm animate-msg-in">
-                              <div>
-                                <span className="font-bold">Room {rev.room}</span> · {simState.rooms[rev.room]?.type}
-                                <div className="text-[10px] text-muted-foreground mt-0.5">Housekeeper: {rev.housekeeper} · waiting since {rev.timeEntered}</div>
-                              </div>
-                              <button
-                                onClick={() => {
-                                  const r = simState.rooms[rev.room];
-                                  if (r) setActiveRoom(r);
-                                }}
-                                className="h-7 px-3 rounded-lg bg-[#F59E0B] text-white text-[11px] font-bold active:scale-95 transition-transform"
-                              >
-                                Review
-                              </button>
+              {/* 2. Real-time active operational scenario cards */}
+              {timeToMinutes(selectedTime) >= timeToMinutes("10:00") && (
+                <>
+                  {/* Pending Supervisor Reviews Queue */}
+                  {simState.reviewQueue.length > 0 && (
+                    <LancyCard urgency="warning">
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#92400E] mb-1.5">
+                        ⚠️ Supervisor Review Pending
+                      </div>
+                      <div className="text-[13px] text-foreground mb-3">
+                        {simState.reviewQueue.length} room{simState.reviewQueue.length > 1 ? "s" : ""} need{simState.reviewQueue.length === 1 ? "s" : ""} your review.
+                      </div>
+                      <div className="space-y-2">
+                        {simState.reviewQueue.map((rev) => (
+                          <div key={rev.room} className="flex items-center justify-between bg-[#FEF3C7]/40 border border-[#FEF3C7] rounded-xl p-3 text-[12px] shadow-sm animate-msg-in">
+                            <div>
+                              <span className="font-bold">Room {rev.room}</span> · {simState.rooms[rev.room]?.type}
+                              <div className="text-[10px] text-muted-foreground mt-0.5">Housekeeper: {rev.housekeeper} · waiting since {rev.timeEntered}</div>
                             </div>
-                          ))}
-                        </div>
-                      </LancyCard>
-                    )}
+                            <button
+                              onClick={() => {
+                                const r = simState.rooms[rev.room];
+                                if (r) setActiveRoom(r);
+                              }}
+                              className="h-7 px-3 rounded-lg bg-[#F59E0B] text-white text-[11px] font-bold active:scale-95 transition-transform"
+                            >
+                              Review
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </LancyCard>
+                  )}
 
-                  </>
-                )}
-              </div>
-
-              <div data-tour="mic" className="shrink-0 border-t border-border bg-white">
-                <InputBar onSend={onSend} />
-              </div>
+                </>
+              )}
             </div>
-          )}
 
-          {tab === "rooms" && (
+            <div data-tour="mic" className="shrink-0 border-t border-border bg-white">
+              <InputBar onSend={onSend} />
+            </div>
+          </div>
+
+          {/* Rooms Tab */}
+          <div className="flex-grow flex-1 min-h-0 flex flex-col" style={{ display: tab === "rooms" ? "flex" : "none" }}>
             <RoomsView onSelectRoom={(r) => setActiveRoom(r)} roomsList={roomsList} />
-          )}
+          </div>
 
-          {tab === "tasks" && (
+          {/* Tasks Tab */}
+          <div className="flex-grow flex-1 min-h-0 flex flex-col" style={{ display: tab === "tasks" ? "flex" : "none" }}>
             <TasksView
               roomsList={roomsList}
               housekeepers={dbHksList}
@@ -2316,7 +2317,7 @@ function LancyApp() {
                 setSimState(compileSimulation(selectedTime, rms, hks));
               }}
             />
-          )}
+          </div>
         </div>
 
         <BottomNav active={tab} onChange={setTab} />
