@@ -11,15 +11,11 @@ const statusFilters = [
   { value: "occupied", label: "Occupied", color: "bg-[#3B82F6] border-[#3B82F6] text-white" },
 ];
 
-const hkFilters = housekeepers.map(h => h.name);
-
 export function RoomsView({ onSelectRoom, roomsList }: { onSelectRoom: (r: Room) => void; roomsList: Room[] }) {
   const [filter, setFilter] = useState<string>("all");
-  const [hkFilter, setHkFilter] = useState<string>("all");
 
   const filtered = roomsList.filter((r) => {
     if (filter !== "all" && r.status !== filter) return false;
-    if (hkFilter !== "all" && r.attendant !== hkFilter) return false;
     return true;
   });
 
@@ -47,36 +43,6 @@ export function RoomsView({ onSelectRoom, roomsList }: { onSelectRoom: (r: Room)
                 }`}
               >
                 {f.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Row 2: Housekeeper Filters */}
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar scroll-smooth">
-          <button
-            onClick={() => setHkFilter("all")}
-            className={`px-3.5 py-1.5 rounded-full text-[12px] font-bold border transition-all active:scale-[0.96] whitespace-nowrap shrink-0 ${
-              hkFilter === "all"
-                ? "bg-emerald-600 border-emerald-600 text-white"
-                : "bg-[#F3F2EF] border-[#E8E5DF] text-muted-foreground hover:bg-[#E8E5DF]"
-            }`}
-          >
-            All Staff
-          </button>
-          {hkFilters.map((name) => {
-            const isActive = hkFilter === name;
-            return (
-              <button
-                key={name}
-                onClick={() => setHkFilter(name)}
-                className={`px-3.5 py-1.5 rounded-full text-[12px] font-bold border transition-all active:scale-[0.96] whitespace-nowrap shrink-0 ${
-                  isActive
-                    ? "bg-emerald-600 border-emerald-600 text-white"
-                    : "bg-[#F3F2EF] border-[#E8E5DF] text-muted-foreground hover:bg-[#E8E5DF]"
-                }`}
-              >
-                {name}
               </button>
             );
           })}

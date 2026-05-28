@@ -9,6 +9,7 @@ import { HandoffScreen } from "@/UI/views/HandoffScreen";
 import { InputBar } from "@/UI/components/InputBar";
 import { BottomNav, Tab } from "@/UI/components/BottomNav";
 import { RoomsView } from "@/UI/views/RoomsView";
+import { TasksView } from "@/UI/views/TasksView";
 import { AssignmentPlanCard } from "@/UI/components/AssignmentPlanCard";
 import { Room, housekeepers, Housekeeper } from "@/simulation/data";
 import { lancyService } from "@/Backend/services/lancy-service";
@@ -84,7 +85,7 @@ function LancyApp() {
   useEffect(() => {
     const triggerProactiveGreeting = async () => {
       const currentMins = timeToMinutes(selectedTime);
-      const arrivalTimeStr = HK_ARRIVALS[activeHkName] || "08:00";
+      const arrivalTimeStr = "07:00";
       
       const dbHks = await lancyService.getHousekeepers();
       const hk = dbHks.find((h) => h.name === activeHkName);
@@ -453,6 +454,11 @@ function LancyApp() {
           tvIssue: compRoom.tvIssue || false,
           isBlocked: compRoom.isBlocked || false,
           note: compRoom.note || undefined,
+          scheduled_start_time: compRoom.scheduled_start_time || undefined,
+          scheduled_end_time: compRoom.scheduled_end_time || undefined,
+          actual_start_time: compRoom.actual_start_time || undefined,
+          actual_end_time: compRoom.actual_end_time || undefined,
+          cleaned_by_name: compRoom.cleaned_by_name || undefined,
         });
       }
     }
@@ -690,6 +696,11 @@ function LancyApp() {
     if (clean.includes("room turnarounds") || clean.includes("turnarounds") || clean.includes("go to rooms")) {
       setTab("rooms");
       toast.info("Switching to Rooms tab.");
+      return;
+    }
+    if (clean.includes("go to tasks") || clean.includes("tasks")) {
+      setTab("tasks");
+      toast.info("Switching to Tasks tab.");
       return;
     }
 
@@ -965,6 +976,23 @@ function LancyApp() {
           {tab === "rooms" && (
             <RoomsView onSelectRoom={(r) => setActiveRoom(r)} roomsList={roomsList} />
           )}
+
+          {tab === "tasks" && (
+            <TasksView
+              roomsList={roomsList}
+              housekeepers={simState.housekeepers ? Object.values(simState.housekeepers).map(h => ({
+                name: h.name,
+                rooms: roomsList.filter(r => r.attendant === h.name).map(r => r.number),
+              })) : []}
+              simTime={selectedTime}
+              onUpdateRoomStatus={handleUpdateRoomStatus}
+              onRefreshState={async () => {
+                const rms = await lancyService.getRooms();
+                const hks = await lancyService.getHousekeepers();
+                setSimState(compileSimulation(selectedTime, rms, hks));
+              }}
+            />
+          )}
         </div>
 
         <BottomNav active={tab} onChange={setTab} />
@@ -975,6 +1003,7 @@ function LancyApp() {
             onClose={() => setActiveRoom(null)}
             onUpdateLancy={handleUpdateFromLancy}
             onUpdateRoomStatus={handleUpdateRoomStatus}
+            simTime={selectedTime}
           />
         )}
 

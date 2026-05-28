@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { X, Clock, User, CheckCircle2, ChevronRight, Zap } from "lucide-react";
+import { X, Lock, CheckCircle2, User, AlertTriangle } from "lucide-react";
 import { Room, statusTag, statusLabel, Housekeeper } from "@/simulation/data";
 import { lancyService } from "@/Backend/services/lancy-service";
-import { continuingRooms } from "@/simulation/engine";
+import { timeToMinutes, minutesToTime, getHkColor } from "@/simulation/engine";
 import { toast } from "sonner";
 
 interface Props {
@@ -10,9 +10,10 @@ interface Props {
   onClose: () => void;
   onUpdateLancy: (msg: string) => void;
   onUpdateRoomStatus: (number: string, status: Room["status"], updates?: Partial<Room>) => void;
+  simTime: string;
 }
 
-export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }: Props) {
+export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus, simTime }: Props) {
   const [hkList, setHkList] = useState<Housekeeper[]>([]);
   const [roomsList, setRoomsList] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,50 +34,102 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
   const hkName = room.attendant;
   const hk = hkList.find((h) => h.name === hkName);
 
-  let queuePosition = 0;
-  let scheduledStart = "10:00 AM";
-  let expectedCompletion = "10:25 AM";
-
-  if (hk) {
-    const queueIndex = hk.rooms.indexOf(room.number);
-    queuePosition = queueIndex + 1;
-
-    let currentMins = 600; // 10:00 AM
-    for (let i = 0; i <= queueIndex; i++) {
-      const rNum = hk.rooms[i];
-      const rObj = roomsList.find((r) => r.number === rNum);
-      const rType = rObj ? rObj.type : "STD";
-      const duration = rType === "STE" ? 45 : rType === "DLX" ? 35 : 25;
-
-      if (i === queueIndex) {
-        scheduledStart = formatMins(currentMins);
-        expectedCompletion = formatMins(currentMins + duration);
-      }
-      currentMins += duration;
-    }
+  // Helper: Format time (e.g. "10:35") to "10:35 AM"
+  function formatTimeStr(t: string | null | undefined): string {
+    if (!t) return "10:00 AM";
+    const [h, m] = t.split(":").map(Number);
+    const hour = h % 12 || 12;
+    const ampm = h >= 12 ? "PM" : "AM";
+    return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
   }
 
-  function formatMins(mins: number): string {
-    const h = Math.floor(mins / 60) % 12 || 12;
-    const m = String(mins % 60).padStart(2, "0");
-    const ampm = Math.floor(mins / 60) >= 12 ? "PM" : "AM";
-    return `${h}:${m} ${ampm}`;
+  // Helper: Calculate remaining minutes or "Overdue"
+  function getRemainingInfo(simTime: string, etaStr: string) {
+    const simMins = timeToMinutes(simTime);
+    const etaMins = timeToMinutes(etaStr);
+    const diff = etaMins - simMins;
+    if (diff <= 0) {
+      return { text: "Overdue", isOverdue: true };
+    }
+    return { text: `${diff} mins`, isOverdue: false };
+  }
+
+  // Helper: Calculate Progress Bar Percent
+  function getProgressPct(simTime: string, startStr: string | null | undefined, duration: number) {
+    if (!startStr) return 0;
+    const simMins = timeToMinutes(simTime);
+    const startMins = timeToMinutes(startStr);
+    const elapsed = simMins - startMins;
+    if (elapsed <= 0) return 0;
+    return Math.min(Math.round((elapsed / duration) * 100), 100);
   }
 
   const handleReassign = async (newHkName: string) => {
-    await lancyService.assignHousekeeperRoom(newHkName, room.number);
-    toast.success(`Room ${room.number} reassigned to ${newHkName}`);
-    onUpdateRoomStatus(room.number, room.status, { attendant: newHkName });
+    const rNum = room.number;
+    const targetHk = hkList.find((h) => h.name === newHkName);
+    if (!targetHk) return;
+
+    // Insert based on priority: Suite first, Deluxe second, Standard third. Placed at the end of that type group.
+    const filtered = (targetHk.rooms || []).filter((num) => num !== rNum);
+    const suites: string[] = [];
+    const deluxe: string[] = [];
+    const standard: string[] = [];
+
+    filtered.forEach((num) => {
+      const rm = roomsList.find((r) => r.number === num);
+      if (rm?.type === "STE") suites.push(num);
+      else if (rm?.type === "DLX") deluxe.push(num);
+      else standard.push(num);
+    });
+
+    if (room.type === "STE") {
+      suites.push(rNum);
+    } else if (room.type === "DLX") {
+      deluxe.push(rNum);
+    } else {
+      standard.push(rNum);
+    }
+
+    const updatedRooms = [...suites, ...deluxe, ...standard];
+
+    // Remove from other housekeeper queues
+    for (const h of hkList) {
+      if (h.name !== newHkName && h.rooms.includes(rNum)) {
+        const nextRooms = h.rooms.filter((num) => num !== rNum);
+        await lancyService.updateHousekeeper(h.name, { rooms: nextRooms });
+      }
+    }
+
+    // Update target housekeeper rooms
+    await lancyService.updateHousekeeper(newHkName, { rooms: updatedRooms });
+
+    // Calculate new timings for target housekeeper's entire queue
+    let currentMins = 600; // 10:00 AM start
+    for (const num of updatedRooms) {
+      const rm = roomsList.find((r) => r.number === num);
+      const rType = rm ? rm.type : "STD";
+      const duration = rType === "STE" ? 45 : rType === "DLX" ? 35 : 25;
+      const start = currentMins;
+      const end = currentMins + duration;
+
+      await lancyService.updateRoomStatus(num, "dirty", {
+        attendant: newHkName,
+        scheduled_start_time: minutesToTime(start),
+        scheduled_end_time: minutesToTime(end),
+      });
+
+      currentMins = end;
+    }
+
+    toast.success(`Room ${rNum} reassigned to ${newHkName}`);
+    onUpdateRoomStatus(rNum, "dirty", { attendant: newHkName });
     await fetchLiveState();
   };
 
-  const handleMoveToTop = async () => {
-    if (!hkName) return;
-    await lancyService.moveRoomToTop(hkName, room.number);
-    toast.success(`Room ${room.number} moved to top of ${hkName}'s queue`);
-    onUpdateRoomStatus(room.number, room.status, { attendant: hkName });
-    await fetchLiveState();
-  };
+  const duration = room.type === "STE" ? 45 : room.type === "DLX" ? 35 : 25;
+  const eta = room.actual_start_time ? minutesToTime(timeToMinutes(room.actual_start_time) + duration) : room.scheduled_end_time || "10:25";
+  const rem = getRemainingInfo(simTime, eta);
+  const pct = getProgressPct(simTime, room.actual_start_time, duration);
 
   return (
     <>
@@ -106,13 +159,13 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
             <div className="text-center py-12 text-muted-foreground text-[13px] font-medium">Loading live room data...</div>
           ) : (
             <>
-              {/* DIRTY & CLEANING FLOW */}
-              {(room.status === "dirty" || room.status === "cleaning") && (
+              {/* DIRTY (UPCOMING, NOT STARTED) */}
+              {room.status === "dirty" && (
                 <div className="space-y-4">
-                  {/* Assigner Panel */}
+                  {/* Reassignment Dropdown Panel */}
                   <div className="rounded-[18px] bg-white border border-[#E8E5DF] p-4 shadow-sm space-y-3.5">
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] font-extrabold text-muted-foreground uppercase tracking-wider">Assigned Attendant</label>
+                      <label className="text-[11px] font-extrabold text-muted-foreground uppercase tracking-wider pl-0.5">Assigned Attendant</label>
                       <div className="relative">
                         <select
                           value={hkName || ""}
@@ -129,37 +182,77 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
                     </div>
 
                     {hkName && (
-                      <div className="pt-2 border-t border-[#F3F2EF] space-y-2.5">
+                      <div className="pt-3 border-t border-[#F3F2EF] space-y-2.5">
                         <div className="flex justify-between items-center text-[12.5px]">
-                          <span className="text-muted-foreground font-medium flex items-center gap-1.5">🕒 Scheduled Start:</span>
-                          <span className="font-bold text-[#1A1A2E]">{scheduledStart}</span>
+                          <span className="text-muted-foreground font-semibold flex items-center gap-1">🕒 Scheduled Start:</span>
+                          <span className="font-extrabold text-[#1A1A2E]">{formatTimeStr(room.scheduled_start_time)}</span>
                         </div>
                         <div className="flex justify-between items-center text-[12.5px]">
-                          <span className="text-muted-foreground font-medium flex items-center gap-1.5">⏱️ Expected Completion:</span>
-                          <span className="font-bold text-[#1A1A2E]">{expectedCompletion}</span>
+                          <span className="text-muted-foreground font-semibold flex items-center gap-1">⏱️ Expected Duration:</span>
+                          <span className="font-extrabold text-[#1A1A2E]">{duration} mins</span>
                         </div>
                         <div className="flex justify-between items-center text-[12.5px]">
-                          <span className="text-muted-foreground font-medium flex items-center gap-1.5">🔢 Queue Position:</span>
-                          <span className="font-bold text-[#1A1A2E]">{queuePosition} of {hk.rooms.length} ({hkName})</span>
+                          <span className="text-muted-foreground font-semibold flex items-center gap-1">⏱️ Expected Completion:</span>
+                          <span className="font-extrabold text-[#1A1A2E]">{formatTimeStr(room.scheduled_end_time)}</span>
                         </div>
                       </div>
                     )}
                   </div>
-
-                  {/* Move to Top Button */}
-                  {hkName && queuePosition > 1 && (
-                    <button
-                      onClick={handleMoveToTop}
-                      className="w-full h-12 bg-white hover:bg-emerald-50 border border-[#E8E5DF] hover:border-emerald-500/30 text-[13px] font-bold text-emerald-700 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm"
-                    >
-                      <Zap size={14} className="fill-emerald-600 text-emerald-600" />
-                      Move to Top of Queue (Next Room)
-                    </button>
-                  )}
                 </div>
               )}
 
-              {/* READY FLOW */}
+              {/* CLEANING (IN PROGRESS) */}
+              {room.status === "cleaning" && (
+                <div className="space-y-4">
+                  <div className="rounded-[18px] bg-white border border-[#E8E5DF] p-5 shadow-sm space-y-4">
+                    {/* Header line */}
+                    <div className="flex justify-between items-center pb-3 border-b border-[#F3F2EF]">
+                      <div className="flex items-center gap-2 bg-[#F8F7F4] rounded-xl px-3 py-1.5 border border-[#E8E5DF]/50">
+                        <span className="h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-extrabold text-white" style={{ backgroundColor: getHkColor(hkName || "Ana") }}>
+                          {(hkName || "A")[0]}
+                        </span>
+                        <span className="text-[12px] font-bold text-foreground">{hkName}</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-[11px] font-extrabold text-muted-foreground uppercase">
+                        <Lock size={12} />
+                        Locked
+                      </div>
+                    </div>
+
+                    {/* Timings */}
+                    <div className="grid grid-cols-3 gap-2 text-left pt-1">
+                      <div>
+                        <div className="text-[9px] font-bold text-muted-foreground uppercase">Started</div>
+                        <div className="text-[12px] font-extrabold text-[#1A1A2E] mt-0.5">{formatTimeStr(room.actual_start_time)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] font-bold text-muted-foreground uppercase">ETA</div>
+                        <div className="text-[12px] font-extrabold text-[#1A1A2E] mt-0.5">{formatTimeStr(eta)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] font-bold text-muted-foreground uppercase">Remaining</div>
+                        <div className={`text-[12px] font-extrabold mt-0.5 ${rem.isOverdue ? "text-amber-600 flex items-center gap-0.5" : "text-[#1A1A2E]"}`}>
+                          {rem.isOverdue && <AlertTriangle size={11} />}
+                          {rem.text}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="pt-2 space-y-1">
+                      <div className="h-2.5 w-full rounded-full bg-[#EFEDE8] overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${rem.isOverdue ? "bg-amber-500" : "bg-[#6366F1]"}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="text-right text-[9px] font-extrabold text-muted-foreground uppercase tracking-widest">{pct}% Complete</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* READY */}
               {room.status === "ready" && (
                 <div className="rounded-[18px] bg-white border border-[#E8E5DF] p-5 shadow-sm flex flex-col items-center text-center space-y-3">
                   <div className="h-12 w-12 rounded-full bg-emerald-50 flex items-center justify-center">
@@ -169,20 +262,24 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
                     <h3 className="text-[15px] font-extrabold text-[#1A1A2E]">Room Cleaned &amp; Ready</h3>
                     <p className="text-[12px] text-muted-foreground mt-1 max-w-[80%] mx-auto">This room is cleared and fully sanitized for upcoming guest arrival.</p>
                   </div>
-                  <div className="w-full pt-3 border-t border-[#F3F2EF] grid grid-cols-2 gap-4 text-left">
+                  <div className="w-full pt-3 border-t border-[#F3F2EF] grid grid-cols-3 gap-4 text-left">
                     <div>
                       <div className="text-[10px] font-bold text-muted-foreground uppercase">Attendant</div>
-                      <div className="text-[13px] font-bold text-[#1A1A2E] mt-0.5">{room.cleaned_by || room.attendant || "Sofia"}</div>
+                      <div className="text-[12px] font-bold text-[#1A1A2E] mt-0.5">{room.cleaned_by_name || room.attendant || "Ana"}</div>
                     </div>
                     <div>
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase">Completed At</div>
-                      <div className="text-[13px] font-bold text-[#1A1A2E] mt-0.5">{room.ready_at || "10:35 AM"}</div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase">Completed</div>
+                      <div className="text-[12px] font-bold text-[#1A1A2E] mt-0.5">{formatTimeStr(room.actual_end_time)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase">Duration</div>
+                      <div className="text-[12px] font-bold text-[#1A1A2E] mt-0.5">{duration} mins</div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* OCCUPIED FLOW */}
+              {/* OCCUPIED */}
               {room.status === "occupied" && (
                 <div className="rounded-[18px] bg-white border border-[#E8E5DF] p-5 shadow-sm space-y-4">
                   <div className="flex items-center gap-3">
@@ -190,14 +287,14 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }:
                       <User className="text-[#3B82F6]" size={20} />
                     </div>
                     <div>
-                      <h3 className="text-[14px] font-bold text-[#1A1A2E]">{continuingRooms.includes(room.number) ? "VIP Continuing Guest" : "Stayover Guest"}</h3>
+                      <h3 className="text-[14px] font-bold text-[#1A1A2E]">Stayover Guest</h3>
                       <p className="text-[11px] text-muted-foreground">Guest currently registered in room.</p>
                     </div>
                   </div>
                   <div className="pt-3 border-t border-[#F3F2EF] space-y-2">
                     <div className="flex justify-between items-center text-[12.5px]">
                       <span className="text-muted-foreground font-medium">Checkout Schedule:</span>
-                      <span className="font-bold text-[#1A1A2E]">{continuingRooms.includes(room.number) ? "Continuing stayover" : "10:00 AM standard"}</span>
+                      <span className="font-bold text-[#1A1A2E]">10:00 AM standard</span>
                     </div>
                     <div className="flex justify-between items-center text-[12.5px]">
                       <span className="text-muted-foreground font-medium">Housekeeper:</span>

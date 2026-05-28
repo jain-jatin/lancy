@@ -30,10 +30,32 @@ export const workflowEngine = {
 
   async confirmAssignments(plan: Record<string, string[]>) {
     // Overwrite the rooms assigned to each housekeeper
+    const allRooms = await dbOperations.getRooms();
     for (const [hkName, roomsList] of Object.entries(plan)) {
       await dbOperations.updateHousekeeper(hkName, { rooms: roomsList });
+      
+      let currentMins = 600; // 10:00 AM
       for (const rNum of roomsList) {
-        await dbOperations.updateRoomStatus(rNum, "dirty", { attendant: hkName });
+        const roomObj = allRooms.find(r => r.number === rNum);
+        const rType = roomObj ? roomObj.type : "STD";
+        const duration = rType === "STE" ? 45 : rType === "DLX" ? 35 : 25;
+        
+        const start = currentMins;
+        const end = currentMins + duration;
+
+        const startStr = `${Math.floor(start / 60).toString().padStart(2, "0")}:${(start % 60).toString().padStart(2, "0")}`;
+        const endStr = `${Math.floor(end / 60).toString().padStart(2, "0")}:${(end % 60).toString().padStart(2, "0")}`;
+
+        await dbOperations.updateRoomStatus(rNum, "dirty", {
+          attendant: hkName,
+          scheduled_start_time: startStr,
+          scheduled_end_time: endStr,
+          actual_start_time: null,
+          actual_end_time: null,
+          cleaned_by_name: null,
+        });
+
+        currentMins = end;
       }
     }
   },

@@ -71,6 +71,11 @@ export const dbOperations = {
       note: r.note,
       flagged: r.flagged,
       priority: r.priority,
+      scheduled_start_time: r.scheduled_start_time,
+      scheduled_end_time: r.scheduled_end_time,
+      actual_start_time: r.actual_start_time,
+      actual_end_time: r.actual_end_time,
+      cleaned_by_name: r.cleaned_by_name,
     }));
   },
 
@@ -86,6 +91,11 @@ export const dbOperations = {
       if (updates.note !== undefined) dbUpdates.note = updates.note;
       if (updates.flagged !== undefined) dbUpdates.flagged = updates.flagged;
       if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
+      if (updates.scheduled_start_time !== undefined) dbUpdates.scheduled_start_time = updates.scheduled_start_time;
+      if (updates.scheduled_end_time !== undefined) dbUpdates.scheduled_end_time = updates.scheduled_end_time;
+      if (updates.actual_start_time !== undefined) dbUpdates.actual_start_time = updates.actual_start_time;
+      if (updates.actual_end_time !== undefined) dbUpdates.actual_end_time = updates.actual_end_time;
+      if (updates.cleaned_by_name !== undefined) dbUpdates.cleaned_by_name = updates.cleaned_by_name;
     }
     const { data, error } = await supabase!
       .from("rooms")

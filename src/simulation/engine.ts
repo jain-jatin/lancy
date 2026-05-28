@@ -98,11 +98,16 @@ export function compileSimulation(simTime: string, customRooms?: Room[], customH
 
         // Apply Room attendant linkage
         room.attendant = hk.name;
+        room.scheduled_start_time = minutesToTime(start);
+        room.scheduled_end_time = minutesToTime(end);
 
         if (T_mins >= start && T_mins < end) {
           room.status = "cleaning";
           room.label = "Cleaning";
           room.cleaning_started_at = minutesToTime(start);
+          room.actual_start_time = minutesToTime(start);
+          room.actual_end_time = null;
+          room.cleaned_by_name = null;
           stateHk.status = "Cleaning";
           stateHk.currentRoom = rNum;
         } else if (T_mins >= end) {
@@ -111,11 +116,17 @@ export function compileSimulation(simTime: string, customRooms?: Room[], customH
           room.cleaning_started_at = minutesToTime(start);
           room.ready_at = minutesToTime(end);
           room.cleaned_by = hk.name;
+          room.actual_start_time = minutesToTime(start);
+          room.actual_end_time = minutesToTime(end);
+          room.cleaned_by_name = hk.name;
           stateHk.completed.push(rNum);
         } else {
           // T_mins < start
           room.status = "dirty";
           room.label = "Dirty";
+          room.actual_start_time = null;
+          room.actual_end_time = null;
+          room.cleaned_by_name = null;
         }
 
         currentMins = end;

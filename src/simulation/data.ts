@@ -11,6 +11,11 @@ export interface Room {
   cleaning_started_at?: string | null;
   ready_at?: string | null;
   cleaned_by?: string | null;
+  scheduled_start_time?: string | null;
+  scheduled_end_time?: string | null;
+  actual_start_time?: string | null;
+  actual_end_time?: string | null;
+  cleaned_by_name?: string | null;
 }
 
 export interface Housekeeper {
