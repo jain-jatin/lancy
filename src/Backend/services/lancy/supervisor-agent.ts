@@ -249,11 +249,10 @@ End with a yes/no question so he can act immediately.
     // ==========================================
     const assignments = await getAssignmentsData();
 
-    // Intent A: ROOM STATUS ("what is room 204" / "status of 204" / "room 204")
-    const roomStatusRegex = /(?:status\s+of\s+room\s+|status\s+of\s+|what\s+is\s+room\s+|room\s+)(\d{3})/i;
-    if (roomStatusRegex.test(cleanMsg)) {
-      const match = cleanMsg.match(roomStatusRegex);
-      const rNum = match ? match[1] : "";
+    // Intent A: ROOM STATUS (matched by any 3-digit number)
+    const roomNumMatch = cleanMsg.match(/\b\d{3}\b/);
+    if (roomNumMatch) {
+      const rNum = roomNumMatch[0];
       const row = assignments.find(r => r.room_number === rNum);
 
       let reply = "";
@@ -285,25 +284,42 @@ End with a yes/no question so he can act immediately.
       return { reply, buttons: [] };
     }
 
-    // Intent B: FLOOR STATUS ("floor 2" / "how is floor 2")
-    const floorStatusRegex = /(?:floor\s+|rooms\s+on\s+floor\s+|status\s+of\s+floor\s+|how\s+is\s+floor\s+)(\d)/i;
-    if (floorStatusRegex.test(cleanMsg)) {
-      const match = cleanMsg.match(floorStatusRegex);
-      const fNum = match ? parseInt(match[1], 10) : 2;
-      const floorRooms = assignments.filter(r => r.floor === fNum);
+    // Intent B: FLOOR STATUS ("floor 2" / "how is floor 2" / "4th floor" / "floor 4")
+    const floorMatch = cleanMsg.match(/\b([2-4])(?:st|nd|rd|th)?\s+floor\b|\bfloor\s+([2-4])\b/i);
+    let fNum: number | null = null;
+    if (floorMatch) {
+      fNum = parseInt(floorMatch[1] || floorMatch[2], 10);
+    } else if (cleanMsg.includes("second floor") || cleanMsg.includes("2nd floor")) {
+      fNum = 2;
+    } else if (cleanMsg.includes("third floor") || cleanMsg.includes("3rd floor")) {
+      fNum = 3;
+    } else if (cleanMsg.includes("fourth floor") || cleanMsg.includes("4th floor")) {
+      fNum = 4;
+    }
 
+    if (fNum !== null) {
+      const floorRooms = assignments.filter(r => r.floor === fNum);
       let reply = "";
       if (floorRooms.length === 0) {
         reply = `I do not have any active assignments on Floor ${fNum} today.`;
       } else {
-        const ready = floorRooms.filter(r => r.status === 'READY').map(r => r.room_number);
-        const cleaning = floorRooms.filter(r => r.status === 'CLEANING').map(r => `${r.room_number} (${r.housekeeper_name}, done ${formatTime(r.scheduled_end)})`);
-        const waiting = floorRooms.filter(r => r.status === 'DIRTY').map(r => r.room_number);
+        const uniqueHks = Array.from(new Set(floorRooms.map(r => r.housekeeper_name).filter(Boolean)));
+        if (cleanMsg.includes("who") || cleanMsg.includes("working") || cleanMsg.includes("housekeeper") || cleanMsg.includes("attendant")) {
+          if (uniqueHks.length > 0) {
+            reply = `The housekeepers working on Floor ${fNum} today are: ${uniqueHks.join(', ')}.`;
+          } else {
+            reply = `No housekeepers are currently assigned to Floor ${fNum} today.`;
+          }
+        } else {
+          const ready = floorRooms.filter(r => r.status === 'READY').map(r => r.room_number);
+          const cleaning = floorRooms.filter(r => r.status === 'CLEANING').map(r => `${r.room_number} (${r.housekeeper_name}, done ${formatTime(r.scheduled_end)})`);
+          const waiting = floorRooms.filter(r => r.status === 'DIRTY').map(r => r.room_number);
 
-        reply = `Floor ${fNum} — ${floorRooms.length} rooms:\n` +
-          (ready.length > 0 ? `Ready: ${ready.join(', ')}\n` : '') +
-          (cleaning.length > 0 ? `Cleaning: ${cleaning.join(', ')}\n` : '') +
-          (waiting.length > 0 ? `Waiting: ${waiting.join(', ')}` : '');
+          reply = `Floor ${fNum} — ${floorRooms.length} rooms:\n` +
+            (ready.length > 0 ? `Ready: ${ready.join(', ')}\n` : '') +
+            (cleaning.length > 0 ? `Cleaning: ${cleaning.join(', ')}\n` : '') +
+            (waiting.length > 0 ? `Waiting: ${waiting.join(', ')}` : '');
+        }
       }
 
       await dbOperations.addMessage("lancy", "Lancy", reply.trim());
