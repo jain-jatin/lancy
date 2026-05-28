@@ -135,7 +135,7 @@ function LancyApp() {
           <br />
           5 housekeepers ready.
           <br /><br />
-          Shall I generate the room cleaning assignments?
+          Shall I generate the room cleaning tasks?
         </LancyBubble>
       )
     },
@@ -144,10 +144,10 @@ function LancyApp() {
       render: () => (
         <div className="flex flex-wrap gap-2 mt-1 pl-1">
           <button
-            onClick={() => onSendRef.current("Yes, assign tasks")}
+            onClick={() => onSendRef.current("Yes, generate tasks")}
             className="h-9 px-4 rounded-full border border-emerald-600 bg-white text-[13px] font-semibold text-emerald-700 active:bg-emerald-50 hover:bg-emerald-50 transition-all shadow-sm"
           >
-            Yes, assign tasks
+            Yes, generate tasks
           </button>
         </div>
       )
@@ -1983,16 +1983,19 @@ function LancyApp() {
       return;
     }
 
-    // C. Intercept Deterministic Assignment Generation
+    // C. Intercept Deterministic Cleaning Tasks Generation
     const assignTriggers = [
-      "yes, assign tasks", "yes", "assign", "generate", "go ahead",
-      "sure", "ok", "do it", "please assign", "let's start", "yep"
+      "yes, generate tasks", "generate tasks", "yes, assign tasks", "yes", "assign", "generate", "go ahead",
+      "sure", "ok", "do it", "please assign", "let's start", "yep", "generate room tasks", "generate room cleaning tasks"
     ];
-    // Check if the input is an assignment trigger and assignments are not yet done
+    const confirmTriggers = [
+      "yes, assign the tasks", "looks good, confirm", "confirm assignments", "confirm", "looks good"
+    ];
+    // Check if the input is an assignment trigger and tasks are not yet done
     const dbRoomsCheck = await lancyService.getRooms();
     const hasAttendants = dbRoomsCheck.some(r => r.attendant);
 
-    if (assignTriggers.some(phrase => clean === phrase || clean.includes(phrase))) {
+    if (!hasAttendants && confirmTriggers.some(phrase => clean === phrase || clean.includes(phrase))) {
       const plan: Record<string, string[]> = {
         Ana: ["203", "201", "202"],
         Rosa: ["205", "204", "301"],
@@ -2013,7 +2016,7 @@ function LancyApp() {
         }
       }
       setAssignmentsConfirmed(true);
-      toast.success("Assignments generated!");
+      toast.success("Cleaning tasks confirmed!");
 
       setTimeout(async () => {
         const dbRooms = await lancyService.getRooms();
@@ -2021,11 +2024,19 @@ function LancyApp() {
         setDbHksList(dbHks);
         setSimState(compileSimulation(selectedTime, dbRooms, dbHks));
 
+        const totalTasks = dbRooms.filter(r => r.attendant).length;
+        const totalHks = dbHks.length;
+        const earliestTime = dbRooms.reduce((acc, r) => {
+          if (!r.scheduled_start_time) return acc;
+          return timeToMinutes(r.scheduled_start_time) < timeToMinutes(acc) ? r.scheduled_start_time : acc;
+        }, "10:00");
+        const formattedStartTime = formatTaskTime(earliestTime);
+
         pushMsgWithNudges(
           <>
-            Done. All 15 rooms assigned across your 5 housekeepers.
+            Done. All {totalTasks} tasks assigned across your {totalHks} housekeepers.
             <br />
-            Everything starts at 10:00 AM.
+            Everything starts at {formattedStartTime}.
             <br /><br />
             Would you like to see any housekeeper's upcoming tasks?
           </>,
@@ -2052,6 +2063,24 @@ function LancyApp() {
           }
         }, 2500);
       }, 500);
+      return;
+    } else if (!hasAttendants && assignTriggers.some(phrase => clean === phrase || clean.includes(phrase))) {
+      pushMsg(
+        <LancyBubble>
+          I have generated the shift cleaning tasks plan: Suites are prioritized first, Deluxe second, and Standard third. Within each type, cleaning tasks are distributed by floor proximity.
+        </LancyBubble>
+      );
+      setTimeout(() => {
+        pushMsg(
+          <AssignmentPlanCard />
+        );
+      }, 400);
+      setTimeout(() => {
+        pushMsgWithNudges(
+          <div className="text-[13px]">Would you like to confirm these cleaning tasks?</div>,
+          ["Yes, assign the tasks"]
+        );
+      }, 800);
       return;
     }
 
