@@ -936,6 +936,29 @@ function LancyApp() {
       });
     }
 
+    if (newStep === 4) {
+      pushMsg(
+        <LancyCard urgency="warning">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+            🔧 Minor Issue · Room 303
+          </div>
+          <div className="text-[13px] text-foreground mb-3">
+            James reports the TV is not functioning in Room 303. Do you want to continue cleaning or pause for maintenance?
+          </div>
+          <div className="flex gap-2">
+            <ActionButton variant="primary" className="flex-1" onClick={() => toast.success("Maintenance ticket logged. Continue cleaning.")}>
+              Continue Cleaning
+            </ActionButton>
+            <ActionButton variant="ghost" onClick={() => toast.info("Turnover paused for maintenance.")}>
+              Pause
+            </ActionButton>
+          </div>
+        </LancyCard>
+      );
+    } else if (newStep === 5) {
+      pushMsg(<DynamicPlumbingIncidentCard />);
+    }
+
     setCurrentStep(newStep);
     await buildLancyStepMessage(newStep);
   };
@@ -1245,6 +1268,41 @@ function LancyApp() {
         housekeepers: updatedHks,
       };
     });
+  };
+
+  const DynamicPlumbingIncidentCard = () => {
+    const isBlocked = simState.rooms["402"]?.status === "blocked" || simState.rooms["402"]?.isBlocked;
+    return (
+      <LancyCard urgency="urgent">
+        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#991B1B] mb-1.5">
+          🚨 URGENT: Major Plumbing Issue
+        </div>
+        <div className="text-[13px] text-foreground mb-3">
+          Priya reports the bathroom is actively leaking in Room 402. Block room from inventory?
+        </div>
+        {!isBlocked ? (
+          <div className="flex gap-2">
+            <ActionButton
+              variant="primary"
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => {
+                handleUpdateRoomStatus("402", "blocked", { isBlocked: true } as any);
+                toast.error("Room 402 BLOCKED. Priya reassigned to Room 405.");
+              }}
+            >
+              Stop & Block Room
+            </ActionButton>
+            <ActionButton variant="ghost" onClick={() => toast.warning("Proceeding with caution.")}>
+              Continue
+            </ActionButton>
+          </div>
+        ) : (
+          <div className="text-[12px] bg-red-50 text-red-700 rounded-xl p-3 border border-red-200 leading-snug">
+            ✅ Room 402 is BLOCKED and out of inventory. Reception has been alerted to reassign guests.
+          </div>
+        )}
+      </LancyCard>
+    );
   };
 
   const handleUpdateFromLancy = async (msg: string) => {
@@ -2188,59 +2246,6 @@ function LancyApp() {
                       </LancyCard>
                     )}
 
-
-                    {/* SCENARIO B: Minor TV Issue Card (from 11:15 AM) */}
-                    {timeToMinutes(selectedTime) >= timeToMinutes("11:15") && (
-                      <LancyCard urgency="warning">
-                        <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-                          🔧 Minor Issue · Room 303
-                        </div>
-                        <div className="text-[13px] text-foreground mb-3">
-                          James reports the TV is not functioning in Room 303. Do you want to continue cleaning or pause for maintenance?
-                        </div>
-                        <div className="flex gap-2">
-                          <ActionButton variant="primary" className="flex-1" onClick={() => toast.success("Maintenance ticket logged. Continue cleaning.")}>
-                            Continue Cleaning
-                          </ActionButton>
-                          <ActionButton variant="ghost" onClick={() => toast.info("Turnover paused for maintenance.")}>
-                            Pause
-                          </ActionButton>
-                        </div>
-                      </LancyCard>
-                    )}
-
-                    {/* SCENARIO C: Major Plumbing Leak Card (from 12:17 PM) */}
-                    {timeToMinutes(selectedTime) >= timeToMinutes("12:17") && (
-                      <LancyCard urgency="urgent">
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#991B1B] mb-1.5">
-                          🚨 URGENT: Major Plumbing Issue
-                        </div>
-                        <div className="text-[13px] text-foreground mb-3">
-                          Priya reports the bathroom is actively leaking in Room 402. Block room from inventory?
-                        </div>
-                        {simState.rooms["402"]?.status !== "blocked" && !simState.rooms["402"]?.isBlocked ? (
-                          <div className="flex gap-2">
-                            <ActionButton
-                              variant="primary"
-                              className="flex-1 bg-red-600 hover:bg-red-700 text-white"
-                              onClick={() => {
-                                handleUpdateRoomStatus("402", "blocked", { isBlocked: true } as any);
-                                toast.error("Room 402 BLOCKED. Priya reassigned to Room 405.");
-                              }}
-                            >
-                              Stop & Block Room
-                            </ActionButton>
-                            <ActionButton variant="ghost" onClick={() => toast.warning("Proceeding with caution.")}>
-                              Continue
-                            </ActionButton>
-                          </div>
-                        ) : (
-                          <div className="text-[12px] bg-red-50 text-red-700 rounded-xl p-3 border border-red-200 leading-snug">
-                            ✅ Room 402 is BLOCKED and out of inventory. Reception has been alerted to reassign guests.
-                          </div>
-                        )}
-                      </LancyCard>
-                    )}
                   </>
                 )}
               </div>
