@@ -141,6 +141,7 @@ export const dbOperations = {
     if (updates.current_activity !== undefined) dbUpdates.current_activity = updates.current_activity;
     if (updates.rooms_completed !== undefined) dbUpdates.rooms_completed = updates.rooms_completed;
     if (updates.next_room !== undefined) dbUpdates.next_room = updates.next_room;
+    if (updates.rooms !== undefined) dbUpdates.rooms = updates.rooms;
     
     await supabase!
       .from("housekeepers")

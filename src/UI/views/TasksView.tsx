@@ -303,7 +303,7 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
                             onClick={() => handleReassignSelect(tempHk)}
                             className="w-full h-8.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-extrabold active:scale-[0.97] transition-all shadow-sm flex items-center justify-center gap-1 mt-1 animate-fade-in"
                           >
-                            Confirm Reassign to {tempHk}
+                            Confirm
                           </button>
                         )}
                       </div>
