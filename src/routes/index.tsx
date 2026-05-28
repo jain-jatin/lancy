@@ -1700,7 +1700,7 @@ function LancyApp() {
     const dbRoomsCheck = await lancyService.getRooms();
     const hasAttendants = dbRoomsCheck.some(r => r.attendant);
 
-    if (!hasAttendants && assignTriggers.some(phrase => clean === phrase || clean.includes(phrase))) {
+    if (assignTriggers.some(phrase => clean === phrase || clean.includes(phrase))) {
       const plan: Record<string, string[]> = {
         Ana: ["203", "201", "202"],
         Rosa: ["205", "204", "301"],
