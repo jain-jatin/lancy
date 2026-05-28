@@ -10,7 +10,7 @@ const tabs: { id: Tab; label: string; Icon: typeof MessageCircle }[] = [
 
 export function BottomNav({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
   return (
-    <nav className="bg-white border-t border-border" style={{ boxShadow: "0 -1px 0 #E8E5DF" }}>
+    <nav className="bottom-nav bg-white border-t border-border" style={{ boxShadow: "0 -1px 0 #E8E5DF" }}>
       <div className="flex">
         {tabs.map(({ id, label, Icon }) => {
           const isActive = id === active;

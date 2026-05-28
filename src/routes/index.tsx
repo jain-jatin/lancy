@@ -758,9 +758,9 @@ function LancyApp() {
   return (
     <div className="h-screen w-full flex justify-center bg-[#EFEDE8] overflow-hidden">
       <Toaster position="top-center" />
-      <div className="relative w-full max-w-[390px] h-screen bg-background flex flex-col overflow-hidden shadow-xl app-container">
+      <div className="app-shell shadow-2xl bg-background">
         {/* Header */}
-        <header className="bg-white border-b border-border px-5 pt-3 pb-3 shrink-0 shadow-sm">
+        <header className="header shadow-sm">
           <div className="flex items-center justify-between gap-3">
             {/* Left: hotel + name or attendant dropdown */}
             <div className="shrink-0">
@@ -794,11 +794,11 @@ function LancyApp() {
         </header>
 
         {/* Tab content */}
-        <div className="flex-1 flex flex-col overflow-hidden animate-fade-in" key={tab}>
+        <div className="tab-content animate-fade-in" key={tab}>
           {tab === "chat" && (
-            <>
+            <div className="flex-1 min-h-0 flex flex-col bg-background">
               {/* Chat feed */}
-              <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              <div ref={scrollRef} className="flex-grow flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
                 {/* 1. Dynamic conversational feed */}
                 {extra.map((m) => (
                   <div key={m.id} className="animate-fade-in">{m.render()}</div>
@@ -907,7 +907,7 @@ function LancyApp() {
               <div data-tour="mic" className="shrink-0 border-t border-border bg-white">
                 <InputBar onSend={onSend} />
               </div>
-            </>
+            </div>
           )}
 
           {tab === "rooms" && (
