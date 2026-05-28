@@ -49,6 +49,47 @@ export function RoomsView({ onSelectRoom, roomsList }: { onSelectRoom: (r: Room)
         </div>
       </div>
 
+      {/* Premium Legends Panel */}
+      <div className="px-4 py-3 bg-white border-b border-[#E8E5DF] flex flex-col gap-2.5 shrink-0 text-[11px] font-semibold text-muted-foreground shadow-sm">
+        {/* State Legends */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center">
+          <span className="text-[9px] font-extrabold uppercase tracking-widest text-[#7C7C8A] mr-1">States</span>
+          <div className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#EF4444]" />
+            <span className="text-[11.5px] font-bold text-foreground">Dirty</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#6366F1]" />
+            <span className="text-[11.5px] font-bold text-foreground">Cleaning</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#10B981]" />
+            <span className="text-[11.5px] font-bold text-foreground">Ready</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#3B82F6]" />
+            <span className="text-[11.5px] font-bold text-foreground">Occupied</span>
+          </div>
+        </div>
+
+        {/* Room Type Legends */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center border-t border-[#F3F2EF] pt-2">
+          <span className="text-[9px] font-extrabold uppercase tracking-widest text-[#7C7C8A] mr-1">Types</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-extrabold bg-[#EFEDE8] px-1.5 py-0.5 rounded uppercase tracking-wider text-foreground">STD</span>
+            <span className="text-[11.5px] font-bold text-foreground">Standard</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-extrabold bg-[#EFEDE8] px-1.5 py-0.5 rounded uppercase tracking-wider text-foreground">DLX</span>
+            <span className="text-[11.5px] font-bold text-foreground">Deluxe</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-extrabold bg-[#EFEDE8] px-1.5 py-0.5 rounded uppercase tracking-wider text-foreground">STE</span>
+            <span className="text-[11.5px] font-bold text-foreground">Suite</span>
+          </div>
+        </div>
+      </div>
+
       <div className="px-4 pt-4 pb-20 space-y-5">
         {Object.keys(byFloor).sort().map((floor) => (
           <div key={floor}>
