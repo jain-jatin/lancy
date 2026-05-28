@@ -88,13 +88,41 @@ const dispatchMockDbUpdate = (tableName: string) => {
 export const mockDb = {
   getRooms(): Room[] {
     if (typeof window === "undefined") return initialRooms;
-    return JSON.parse(localStorage.getItem(LS_ROOMS_KEY) || "[]");
+    const stored = localStorage.getItem(LS_ROOMS_KEY);
+    if (!stored || stored === "[]") {
+      localStorage.setItem(LS_ROOMS_KEY, JSON.stringify(initialRooms));
+      return initialRooms;
+    }
+    try {
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        localStorage.setItem(LS_ROOMS_KEY, JSON.stringify(initialRooms));
+        return initialRooms;
+      }
+      return parsed;
+    } catch (e) {
+      localStorage.setItem(LS_ROOMS_KEY, JSON.stringify(initialRooms));
+      return initialRooms;
+    }
   },
 
   updateRoom(number: string, updates: Partial<Room>): Room {
     const rooms = this.getRooms();
     const index = rooms.findIndex((r) => r.number === number);
-    if (index === -1) throw new Error(`Room ${number} not found`);
+    if (index === -1) {
+      const fallbackRoom: Room = {
+        number,
+        floor: parseInt(number.charAt(0), 10),
+        type: number === "205" || number === "305" || number === "505" ? "STE" : (number.endsWith("3") || number.endsWith("4") ? "DLX" : "STD"),
+        status: "dirty",
+        label: "Dirty",
+        ...updates
+      };
+      rooms.push(fallbackRoom);
+      localStorage.setItem(LS_ROOMS_KEY, JSON.stringify(rooms));
+      dispatchMockDbUpdate("rooms");
+      return fallbackRoom;
+    }
     
     rooms[index] = { ...rooms[index], ...updates };
     localStorage.setItem(LS_ROOMS_KEY, JSON.stringify(rooms));
@@ -104,13 +132,41 @@ export const mockDb = {
 
   getHousekeepers(): Housekeeper[] {
     if (typeof window === "undefined") return initialHousekeepers;
-    return JSON.parse(localStorage.getItem(LS_HKS_KEY) || "[]");
+    const stored = localStorage.getItem(LS_HKS_KEY);
+    if (!stored || stored === "[]") {
+      localStorage.setItem(LS_HKS_KEY, JSON.stringify(initialHousekeepers));
+      return initialHousekeepers;
+    }
+    try {
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        localStorage.setItem(LS_HKS_KEY, JSON.stringify(initialHousekeepers));
+        return initialHousekeepers;
+      }
+      return parsed;
+    } catch (e) {
+      localStorage.setItem(LS_HKS_KEY, JSON.stringify(initialHousekeepers));
+      return initialHousekeepers;
+    }
   },
 
   updateHousekeeper(name: string, updates: Partial<Housekeeper>): Housekeeper {
     const hks = this.getHousekeepers();
     const index = hks.findIndex((h) => h.name === name);
-    if (index === -1) throw new Error(`Housekeeper ${name} not found`);
+    if (index === -1) {
+      const fallbackHk: Housekeeper = {
+        name,
+        rooms: [],
+        status: "available",
+        active: true,
+        rooms_completed: 0,
+        ...updates
+      };
+      hks.push(fallbackHk);
+      localStorage.setItem(LS_HKS_KEY, JSON.stringify(hks));
+      dispatchMockDbUpdate("housekeepers");
+      return fallbackHk;
+    }
 
     hks[index] = { ...hks[index], ...updates };
     localStorage.setItem(LS_HKS_KEY, JSON.stringify(hks));
