@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Lock, Zap, Clock, User, CheckCircle2, AlertTriangle, ArrowRight } from "lucide-react";
-import { Room, Housekeeper, statusDot, statusLabel } from "@/simulation/data";
+import { Lock, Zap, Clock, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Room, Housekeeper } from "@/simulation/data";
 import { timeToMinutes, minutesToTime, getHkColor } from "@/simulation/engine";
 import { lancyService } from "@/Backend/services/lancy-service";
 import { toast } from "sonner";
@@ -14,8 +14,9 @@ interface Props {
 }
 
 export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus, onRefreshState }: Props) {
-  const [selectedHk, setSelectedHk] = useState<string>("All");
+  const [selectedHk, setSelectedHk] = useState<string>("Ana");
   const [reassigningRoom, setReassigningRoom] = useState<Room | null>(null);
+  const [tempHk, setTempHk] = useState<string | null>(null);
 
   // Helper: Format t (e.g. "10:35") to "10:35 AM"
   function formatTimeStr(t: string | null | undefined): string {
@@ -37,26 +38,26 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
     return { text: `${diff} mins`, isOverdue: false };
   }
 
-  // Helper: Calculate Progress Bar Percent
-  function getProgressPct(simTime: string, startStr: string | null | undefined, duration: number) {
-    if (!startStr) return 0;
-    const simMins = timeToMinutes(simTime);
-    const startMins = timeToMinutes(startStr);
-    const elapsed = simMins - startMins;
-    if (elapsed <= 0) return 0;
-    return Math.min(Math.round((elapsed / duration) * 100), 100);
-  }
-
   // Handle reassigning housekeeper
   const handleReassignSelect = async (targetHkName: string) => {
     if (!reassigningRoom) return;
     const rNum = reassigningRoom.number;
+    const sourceHkName = reassigningRoom.attendant;
 
-    // Find target housekeeper's current queue
+    // Find target housekeeper's current queue from database
     const targetHk = housekeepers.find((h) => h.name === targetHkName);
     if (!targetHk) return;
 
-    // Insert room based on priority: Suite first, Deluxe second, Standard third. Placed at the end of that type group.
+    // Remove from original housekeeper queue
+    if (sourceHkName) {
+      const sourceHk = housekeepers.find((h) => h.name === sourceHkName);
+      if (sourceHk) {
+        const nextRooms = (sourceHk.rooms || []).filter((num) => num !== rNum);
+        await lancyService.updateHousekeeper(sourceHkName, { rooms: nextRooms });
+      }
+    }
+
+    // Insert room into target housekeeper queue based on priority: Suite first, Deluxe second, Standard third. Placed at the end of that type group.
     const filtered = (targetHk.rooms || []).filter((num) => num !== rNum);
     const suites: string[] = [];
     const deluxe: string[] = [];
@@ -78,14 +79,6 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
     }
 
     const updatedRooms = [...suites, ...deluxe, ...standard];
-
-    // Remove from other housekeeper queues
-    for (const h of housekeepers) {
-      if (h.name !== targetHkName && h.rooms.includes(rNum)) {
-        const nextRooms = h.rooms.filter((num) => num !== rNum);
-        await lancyService.updateHousekeeper(h.name, { rooms: nextRooms });
-      }
-    }
 
     // Update target housekeeper rooms
     await lancyService.updateHousekeeper(targetHkName, { rooms: updatedRooms });
@@ -110,6 +103,7 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
 
     toast.success(`Room ${rNum} reassigned to ${targetHkName}`);
     setReassigningRoom(null);
+    setTempHk(null);
     onUpdateRoomStatus(rNum, "dirty", { attendant: targetHkName });
     await onRefreshState();
   };
@@ -118,7 +112,6 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
   const checkoutRooms = roomsList.filter((r) => r.attendant && (r.status === "dirty" || r.status === "cleaning" || r.status === "ready"));
 
   const filteredTasks = checkoutRooms.filter((t) => {
-    if (selectedHk === "All") return true;
     return t.attendant === selectedHk;
   });
 
@@ -152,7 +145,6 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
             onChange={(e) => setSelectedHk(e.target.value)}
             className="w-full h-11 px-3.5 rounded-xl border border-[#E8E5DF] bg-[#F8F7F4] text-[13px] font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
           >
-            <option value="All">All Staff (Grouped)</option>
             {housekeepers.map((h) => (
               <option key={h.name} value={h.name}>{h.name}</option>
             ))}
@@ -174,32 +166,26 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
                 const duration = t.type === "STE" ? 45 : t.type === "DLX" ? 35 : 25;
                 const eta = t.actual_start_time ? minutesToTime(timeToMinutes(t.actual_start_time) + duration) : t.scheduled_end_time || "10:25";
                 const rem = getRemainingInfo(simTime, eta);
-                const pct = getProgressPct(simTime, t.actual_start_time, duration);
 
                 return (
-                  <div key={t.number} className="rounded-2xl bg-white border border-[#E8E5DF] shadow-sm p-4 space-y-3 relative overflow-hidden">
-                    {/* Top Row */}
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-3">
-                        <span className="h-3 w-3 rounded-full bg-[#6366F1]" />
-                        <div>
-                          <h4 className="text-[16px] font-extrabold text-foreground">Room {t.number}</h4>
-                          <span className="text-[11px] text-muted-foreground font-medium">{t.type} · Floor {t.floor}</span>
-                        </div>
+                  <div key={t.number} className="rounded-2xl bg-white border border-[#E8E5DF] shadow-sm p-4.5 space-y-3 relative overflow-hidden">
+                    {/* Simplified Merged Header */}
+                    <div className="flex justify-between items-center pb-2 border-b border-[#F3F2EF]">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[14.5px] font-extrabold text-foreground">Room {t.number}</span>
+                        <span className="text-[9.5px] font-extrabold bg-[#EFEDE8] text-muted-foreground px-1.5 py-0.5 rounded uppercase tracking-wider leading-none">{t.type}</span>
+                        <span className="text-[11.5px] text-muted-foreground font-semibold">Floor {t.floor}</span>
+                        <span className="text-muted-foreground/30 text-[10px]">|</span>
+                        <span className="text-[11px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100/60 flex items-center gap-1 leading-none">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          {t.attendant}
+                        </span>
                       </div>
-                      <Lock size={14} className="text-muted-foreground/60 mr-1 mt-0.5" />
-                    </div>
-
-                    {/* Staff details */}
-                    <div className="flex items-center gap-2 bg-[#F8F7F4] rounded-xl px-3 py-2 border border-[#E8E5DF]/50">
-                      <span className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-extrabold text-white" style={{ backgroundColor: getHkColor(t.attendant || "Ana") }}>
-                        {(t.attendant || "A")[0]}
-                      </span>
-                      <span className="text-[12px] font-bold text-foreground">{t.attendant}</span>
+                      <Lock size={13} className="text-muted-foreground/60 mr-0.5 shrink-0" />
                     </div>
 
                     {/* Timing grid */}
-                    <div className="grid grid-cols-3 gap-2 pt-1.5 text-left">
+                    <div className="grid grid-cols-3 gap-2 pt-1 text-left">
                       <div>
                         <div className="text-[9px] font-bold text-muted-foreground uppercase">Started</div>
                         <div className="text-[12px] font-extrabold text-[#1A1A2E] mt-0.5">{formatTimeStr(t.actual_start_time)}</div>
@@ -215,17 +201,6 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
                           {rem.text}
                         </div>
                       </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="pt-2 space-y-1">
-                      <div className="h-2 w-full rounded-full bg-[#EFEDE8] overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${rem.isOverdue ? "bg-amber-500" : "bg-[#6366F1]"}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <div className="text-right text-[9px] font-extrabold text-muted-foreground uppercase tracking-widest">{pct}% Complete</div>
                     </div>
                   </div>
                 );
@@ -244,51 +219,95 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
             <div className="space-y-2.5">
               {upcomingTasks.map((t) => {
                 const duration = t.type === "STE" ? 45 : t.type === "DLX" ? 35 : 25;
-                const hk = housekeepers.find((h) => h.name === t.attendant);
-                const qPos = hk ? hk.rooms.indexOf(t.number) + 1 : 1;
+                const upcomingHkRooms = upcomingTasks.filter((r) => r.attendant === t.attendant);
+                const qPos = upcomingHkRooms.findIndex((r) => r.number === t.number) + 1;
 
                 return (
-                  <div key={t.number} className="rounded-2xl bg-white border border-[#E8E5DF] shadow-sm p-4 space-y-3 relative overflow-hidden">
-                    {/* Top Row */}
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-3">
-                        <span className="h-3 w-3 rounded-full bg-[#EF4444]" />
-                        <div>
-                          <h4 className="text-[16px] font-extrabold text-foreground">Room {t.number}</h4>
-                          <span className="text-[11px] text-muted-foreground font-medium">{t.type} · Floor {t.floor}</span>
-                        </div>
+                  <div key={t.number} className="rounded-2xl bg-white border border-[#E8E5DF] shadow-sm p-4.5 space-y-3 relative overflow-hidden">
+                    {/* Simplified Merged Header */}
+                    <div className="flex justify-between items-center pb-2 border-b border-[#F3F2EF]">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[14.5px] font-extrabold text-foreground">Room {t.number}</span>
+                        <span className="text-[9.5px] font-extrabold bg-[#EFEDE8] text-muted-foreground px-1.5 py-0.5 rounded uppercase tracking-wider leading-none">{t.type}</span>
+                        <span className="text-[11.5px] text-muted-foreground font-semibold">Floor {t.floor}</span>
+                        <span className="text-muted-foreground/30 text-[10px]">|</span>
+                        <span className="text-[11px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100/60 flex items-center gap-1 leading-none">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          {t.attendant}
+                        </span>
                       </div>
                       <button
-                        onClick={() => setReassigningRoom(t)}
-                        className="h-7 px-3 rounded-lg border border-[#E8E5DF] hover:border-emerald-500 hover:text-emerald-700 bg-white text-[11px] font-extrabold text-muted-foreground active:scale-95 transition-all shadow-sm"
+                        onClick={() => {
+                          setReassigningRoom(t);
+                          setTempHk(null);
+                        }}
+                        className="h-6.5 px-2.5 rounded-lg border border-[#E8E5DF] hover:border-emerald-500 hover:text-emerald-700 bg-white text-[10.5px] font-extrabold text-muted-foreground active:scale-95 transition-all shadow-sm"
                       >
                         Reassign
                       </button>
                     </div>
 
-                    {/* Staff details */}
-                    <div className="flex items-center gap-2 bg-[#F8F7F4] rounded-xl px-3 py-2 border border-[#E8E5DF]/50">
-                      <span className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-extrabold text-white" style={{ backgroundColor: getHkColor(t.attendant || "Ana") }}>
-                        {(t.attendant || "A")[0]}
-                      </span>
-                      <span className="text-[12px] font-bold text-foreground">{t.attendant}</span>
-                    </div>
-
                     {/* Details grid */}
-                    <div className="grid grid-cols-3 gap-2 pt-1.5 text-left border-t border-[#F3F2EF]">
+                    <div className="grid grid-cols-3 gap-2 pt-1 text-left">
                       <div>
                         <div className="text-[9px] font-bold text-muted-foreground uppercase">Scheduled</div>
-                        <div className="text-[11.5px] font-extrabold text-[#1A1A2E] mt-0.5">{formatTimeStr(t.scheduled_start_time)}</div>
+                        <div className="text-[12px] font-extrabold text-[#1A1A2E] mt-0.5">{formatTimeStr(t.scheduled_start_time)}</div>
                       </div>
                       <div>
                         <div className="text-[9px] font-bold text-muted-foreground uppercase">Duration</div>
-                        <div className="text-[11.5px] font-extrabold text-[#1A1A2E] mt-0.5">{duration} mins</div>
+                        <div className="text-[12px] font-extrabold text-[#1A1A2E] mt-0.5">{duration} mins</div>
                       </div>
                       <div>
                         <div className="text-[9px] font-bold text-muted-foreground uppercase">Queue Rank</div>
-                        <div className="text-[11.5px] font-extrabold text-[#1A1A2E] mt-0.5">#{qPos} in queue</div>
+                        <div className="text-[12px] font-extrabold text-[#1A1A2E] mt-0.5">#{qPos} in queue</div>
                       </div>
                     </div>
+
+                    {/* Inline Reassign pill selection panel */}
+                    {reassigningRoom?.number === t.number && (
+                      <div className="mt-3 pt-3 border-t border-[#F3F2EF] space-y-2.5 animate-fade-in bg-[#F8F7F4] p-3 rounded-2xl border border-[#E8E5DF]">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-extrabold text-[#7C7C8A] uppercase tracking-widest pl-0.5">Select Attendant</span>
+                          <button
+                            onClick={() => {
+                              setReassigningRoom(null);
+                              setTempHk(null);
+                            }}
+                            className="text-[10px] font-extrabold text-red-500 hover:text-red-700 uppercase tracking-wider"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {housekeepers
+                            .filter((h) => h.name !== t.attendant) // Exclude current housekeeper
+                            .map((h) => {
+                              const isSel = tempHk === h.name;
+                              return (
+                                <button
+                                  key={h.name}
+                                  onClick={() => setTempHk(h.name)}
+                                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all active:scale-[0.96] ${
+                                    isSel
+                                      ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                      : "bg-white border-[#E8E5DF] text-muted-foreground hover:bg-[#F8F7F4]"
+                                  }`}
+                                >
+                                  {h.name}
+                                </button>
+                              );
+                            })}
+                        </div>
+                        {tempHk && (
+                          <button
+                            onClick={() => handleReassignSelect(tempHk)}
+                            className="w-full h-8.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11.5px] font-extrabold active:scale-[0.97] transition-all shadow-sm flex items-center justify-center gap-1 mt-1 animate-fade-in"
+                          >
+                            Confirm Reassign to {tempHk}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -303,41 +322,39 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
               <span className="text-[11px] font-extrabold text-[#065F46] uppercase tracking-wider">Past</span>
               <span className="bg-[#D1FAE5] text-[#065F46] text-[10px] font-extrabold px-2 py-0.5 rounded-full">{countPast}</span>
             </div>
-            <div className="space-y-2.5 opacity-[0.7]">
+            <div className="space-y-2.5 opacity-[0.75]">
               {pastTasks.map((t) => {
                 const duration = t.type === "STE" ? 45 : t.type === "DLX" ? 35 : 25;
                 return (
-                  <div key={t.number} className="rounded-2xl bg-white border border-[#E8E5DF] shadow-sm p-4 space-y-3 relative overflow-hidden">
-                    {/* Top Row */}
-                    <div className="flex items-center gap-3">
-                      <span className="h-3 w-3 rounded-full bg-[#10B981]" />
-                      <div>
-                        <h4 className="text-[16px] font-extrabold text-[#4B5563]">Room {t.number}</h4>
-                        <span className="text-[11px] text-muted-foreground font-medium">{t.type} · Floor {t.floor}</span>
+                  <div key={t.number} className="rounded-2xl bg-white border border-[#E8E5DF] shadow-sm p-4.5 space-y-3 relative overflow-hidden">
+                    {/* Simplified Merged Header */}
+                    <div className="flex justify-between items-center pb-2 border-b border-[#F3F2EF]">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[14.5px] font-extrabold text-[#4B5563]">Room {t.number}</span>
+                        <span className="text-[9.5px] font-extrabold bg-[#EFEDE8] text-muted-foreground px-1.5 py-0.5 rounded uppercase tracking-wider leading-none">{t.type}</span>
+                        <span className="text-[11.5px] text-muted-foreground font-semibold">Floor {t.floor}</span>
+                        <span className="text-muted-foreground/30 text-[10px]">|</span>
+                        <span className="text-[11px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100/60 flex items-center gap-1 leading-none">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          {t.attendant}
+                        </span>
                       </div>
-                    </div>
-
-                    {/* Staff details */}
-                    <div className="flex items-center gap-2 bg-[#F8F7F4] rounded-xl px-3 py-2 border border-[#E8E5DF]/50">
-                      <span className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-extrabold text-white" style={{ backgroundColor: getHkColor(t.attendant || "Ana") }}>
-                        {(t.attendant || "A")[0]}
-                      </span>
-                      <span className="text-[12px] font-bold text-foreground">{t.attendant}</span>
+                      <CheckCircle2 size={14} className="text-emerald-600 mr-0.5 shrink-0" />
                     </div>
 
                     {/* Timings */}
                     <div className="grid grid-cols-3 gap-2 pt-1 text-left">
                       <div>
                         <div className="text-[9px] font-bold text-muted-foreground uppercase">Started</div>
-                        <div className="text-[11.5px] font-extrabold text-[#4B5563] mt-0.5">{formatTimeStr(t.actual_start_time)}</div>
+                        <div className="text-[12px] font-extrabold text-[#4B5563] mt-0.5">{formatTimeStr(t.actual_start_time)}</div>
                       </div>
                       <div>
                         <div className="text-[9px] font-bold text-muted-foreground uppercase">Completed</div>
-                        <div className="text-[11.5px] font-extrabold text-[#4B5563] mt-0.5">{formatTimeStr(t.actual_end_time)}</div>
+                        <div className="text-[12px] font-extrabold text-[#4B5563] mt-0.5">{formatTimeStr(t.actual_end_time)}</div>
                       </div>
                       <div>
                         <div className="text-[9px] font-bold text-muted-foreground uppercase">Duration</div>
-                        <div className="text-[11.5px] font-extrabold text-[#4B5563] mt-0.5">{duration} mins</div>
+                        <div className="text-[12px] font-extrabold text-[#4B5563] mt-0.5">{duration} mins</div>
                       </div>
                     </div>
                   </div>
@@ -353,47 +370,6 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
           </div>
         )}
       </div>
-
-      {/* REASSIGN BOTTOM SHEET */}
-      {reassigningRoom && (
-        <>
-          <div className="absolute inset-0 z-40 bg-black/40 animate-fade-in" onClick={() => setReassigningRoom(null)} />
-          <div className="absolute left-0 right-0 bottom-0 z-50 bg-[#EFEDE8] rounded-t-[24px] p-5 animate-slide-up shadow-2xl border-t border-border/30 max-h-[70%] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between pb-3.5 border-b border-[#E8E5DF] shrink-0">
-              <div>
-                <h3 className="text-[17px] font-extrabold text-[#1A1A2E] tracking-tight">Reassign Room {reassigningRoom.number}</h3>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Select a housekeeper to re-schedule this {reassigningRoom.type} room.</p>
-              </div>
-              <button
-                onClick={() => setReassigningRoom(null)}
-                className="h-8 w-8 rounded-full bg-white flex items-center justify-center text-muted-foreground active:scale-95 transition-all shadow-sm"
-              >
-                ×
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto py-4 space-y-2">
-              {housekeepers.map((h) => {
-                const count = h.rooms.length;
-                return (
-                  <button
-                    key={h.name}
-                    onClick={() => handleReassignSelect(h.name)}
-                    className="w-full bg-white hover:bg-emerald-50 border border-[#E8E5DF] hover:border-emerald-500/20 rounded-xl p-3.5 flex items-center justify-between transition-all active:scale-[0.98] shadow-sm"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="h-8 w-8 rounded-full flex items-center justify-center text-[12px] font-extrabold text-white" style={{ backgroundColor: getHkColor(h.name) }}>
-                        {h.name[0]}
-                      </span>
-                      <span className="text-[13.5px] font-extrabold text-[#1A1A2E]">{h.name}</span>
-                    </div>
-                    <span className="text-[11.5px] font-bold text-muted-foreground">{count} rooms in queue</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }

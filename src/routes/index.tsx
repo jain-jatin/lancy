@@ -79,6 +79,7 @@ function LancyApp() {
 
   const [selectedTime, setSelectedTime] = useState("07:00");
   const [simState, setSimState] = useState(() => compileSimulation("07:00"));
+  const [dbHksList, setDbHksList] = useState<Housekeeper[]>([]);
   const roomsList = Object.values(simState.rooms);
 
   // Proactive greeting on selection change
@@ -153,6 +154,7 @@ function LancyApp() {
     const syncFromDb = async () => {
       const dbRooms = await lancyService.getRooms();
       const dbHks = await lancyService.getHousekeepers();
+      setDbHksList(dbHks);
       setSimState((prev) => {
         const updatedRooms = { ...prev.rooms };
         dbRooms.forEach((r) => {
@@ -633,6 +635,7 @@ function LancyApp() {
     // Reload state from database
     const dbRooms = await lancyService.getRooms();
     const dbHks = await lancyService.getHousekeepers();
+    setDbHksList(dbHks);
     setSimState((prev) => {
       const updatedRooms = { ...prev.rooms };
       dbRooms.forEach((r) => {
@@ -980,15 +983,13 @@ function LancyApp() {
           {tab === "tasks" && (
             <TasksView
               roomsList={roomsList}
-              housekeepers={simState.housekeepers ? Object.values(simState.housekeepers).map(h => ({
-                name: h.name,
-                rooms: roomsList.filter(r => r.attendant === h.name).map(r => r.number),
-              })) : []}
+              housekeepers={dbHksList}
               simTime={selectedTime}
               onUpdateRoomStatus={handleUpdateRoomStatus}
               onRefreshState={async () => {
                 const rms = await lancyService.getRooms();
                 const hks = await lancyService.getHousekeepers();
+                setDbHksList(hks);
                 setSimState(compileSimulation(selectedTime, rms, hks));
               }}
             />
