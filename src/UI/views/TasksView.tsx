@@ -21,10 +21,18 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
   // Helper: Format t (e.g. "10:35") to "10:35 AM"
   function formatTimeStr(t: string | null | undefined): string {
     if (!t) return "10:00 AM";
-    const [h, m] = t.split(":").map(Number);
-    const hour = h % 12 || 12;
-    const ampm = h >= 12 ? "PM" : "AM";
-    return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
+    let timeStr = t;
+    if (t.includes("T")) {
+      const parts = t.split("T");
+      if (parts.length > 1) {
+        timeStr = parts[1];
+      }
+    }
+    const [h, m] = timeStr.split(":").map(Number);
+    const hour = (isNaN(h) ? 10 : h) % 12 || 12;
+    const minutes = isNaN(m) ? 0 : m;
+    const ampm = (isNaN(h) ? 10 : h) >= 12 ? "PM" : "AM";
+    return `${hour}:${minutes.toString().padStart(2, "0")} ${ampm}`;
   }
 
   // Helper: Calculate remaining minutes or "Overdue"

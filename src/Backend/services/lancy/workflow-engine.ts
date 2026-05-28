@@ -69,14 +69,16 @@ export const workflowEngine = {
           return d.toISOString()
         };
 
+        const format24 = (mins: number) => `${Math.floor(mins / 60).toString().padStart(2, "0")}:${(mins % 60).toString().padStart(2, "0")}`;
+
         const scheduled_start = toLocalISO(Math.floor(start / 60), start % 60);
         const scheduled_end = toLocalISO(Math.floor(end / 60), end % 60);
 
         roomPromises.push((async () => {
           await dbOperations.updateRoomStatus(rNum, "dirty", {
             attendant: hkName,
-            scheduled_start_time: scheduled_start,
-            scheduled_end_time: scheduled_end,
+            scheduled_start_time: format24(start),
+            scheduled_end_time: format24(end),
             actual_start_time: null,
             actual_end_time: null,
             cleaned_by_name: null,
