@@ -846,6 +846,53 @@ function LancyApp() {
         .from('shifts')
         .update({ current_step: newStep })
         .eq('id', 1);
+    } else {
+      const roomsData = await lancyService.getRooms();
+      const assignedRooms = roomsData.filter(r => r.attendant && (r.scheduled_start_time || r.scheduled_end_time));
+
+      if (assignedRooms.length === 0) {
+        addLancyMessage(
+          "No assignments found. Please confirm assignments first."
+        );
+        return;
+      }
+
+      const [simH, simM] = TIME_STEPS[newStep] || [9, 0];
+      const simMins = simH * 60 + simM;
+
+      for (const room of assignedRooms) {
+        const start = timeToMinutes(room.scheduled_start_time || "10:00");
+        const end = timeToMinutes(room.scheduled_end_time || "10:25");
+
+        let status: Room["status"] = "dirty";
+        let actual_start = room.actual_start_time;
+        let actual_end = room.actual_end_time;
+
+        if (simMins >= start && simMins < end) {
+          status = "cleaning";
+          actual_start = room.scheduled_start_time || "10:00";
+          actual_end = null;
+        } else if (simMins >= end) {
+          status = "ready";
+          actual_start = room.scheduled_start_time || "10:00";
+          actual_end = room.scheduled_end_time || "10:25";
+        } else {
+          status = "dirty";
+          actual_start = null;
+          actual_end = null;
+        }
+
+        await lancyService.updateRoomStatus(room.number, status, {
+          actual_start_time: actual_start,
+          actual_end_time: actual_end,
+          cleaned_by_name: status === "ready" ? room.attendant : null,
+        });
+      }
+
+      await lancyService.updateShift({
+        started: true,
+        status: "active",
+      });
     }
 
     setCurrentStep(newStep);
@@ -895,6 +942,69 @@ function LancyApp() {
             (new Date(r.scheduled_end).getTime() - getSimDateTime(step).getTime()) / 60000
           ));
           msg += `${r.housekeeper_name} → Room ${r.room_number}, ` +
+            `${minsLeft} mins left\n`;
+        });
+      }
+
+      if (dirty.length > 0) {
+        msg += `\n${dirty.length} rooms pending.`;
+      }
+
+      addLancyMessage(msg.trim());
+    } else {
+      const roomsData = await lancyService.getRooms();
+      const assignedRooms = roomsData.filter(r => r.attendant && (r.scheduled_start_time || r.scheduled_end_time));
+
+      if (assignedRooms.length === 0) return;
+
+      const ready = assignedRooms.filter(r => r.status === 'ready');
+      const cleaning = assignedRooms.filter(r => r.status === 'cleaning');
+      const dirty = assignedRooms.filter(r => r.status === 'dirty' || r.status === 'occupied');
+      const timeLabel = formatStepTime(step);
+
+      const formatStringTime = (tStr: string | null | undefined) => {
+        if (!tStr) return "10:00 AM";
+        if (tStr.includes("T")) {
+          const d = new Date(tStr);
+          return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        const [h, m] = tStr.split(":").map(Number);
+        const hour = h % 12 || 12;
+        const ampm = h >= 12 ? "PM" : "AM";
+        return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
+      };
+
+      if (step === 1) {
+        addLancyMessage(
+          `Checkout complete. Team started cleaning rooms.\n\n` +
+          cleaning.map(r =>
+            `${r.attendant} → Room ${r.number} ` +
+            `(${r.type === "STE" ? "Suite" : r.type === "DLX" ? "Deluxe" : "Standard"}), ready by ` +
+            `${formatStringTime(r.scheduled_end_time)}`
+          ).join('\n') +
+          (dirty.length > 0 ? `\n\n${dirty.length} rooms queued.` : '')
+        );
+        return;
+      }
+
+      if (step === 5 || assignedRooms.every(r => r.status === 'ready')) {
+        addLancyMessage(
+          `${ready.length} rooms guest ready. ` +
+          `12:00 PM. Checkin begins.`
+        );
+        return;
+      }
+
+      let msg = `${timeLabel}. ${ready.length} rooms ready.\n\n`;
+
+      if (cleaning.length > 0) {
+        cleaning.forEach(r => {
+          const [stepH, stepM] = TIME_STEPS[step] || [9, 0];
+          const simMins = stepH * 60 + stepM;
+          const endMins = timeToMinutes(r.scheduled_end_time || "10:25");
+          const minsLeft = Math.max(0, endMins - simMins);
+
+          msg += `${r.attendant} → Room ${r.number}, ` +
             `${minsLeft} mins left\n`;
         });
       }
