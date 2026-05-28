@@ -1,8 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 import { rooms as initialRooms, housekeepers as initialHousekeepers, Room, Housekeeper } from "@/simulation/data";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabaseUrl = 
+  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_SUPABASE_URL) || 
+  (typeof import.meta !== "undefined" && (import.meta.env as any)?.VITE_SUPABASE_URL) || 
+  "";
+const supabaseAnonKey = 
+  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY) || 
+  (typeof import.meta !== "undefined" && (import.meta.env as any)?.VITE_SUPABASE_ANON_KEY) || 
+  "";
 
 export const isRealSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 
@@ -157,9 +163,9 @@ export const mockDb = {
       const fallbackHk: Housekeeper = {
         name,
         rooms: [],
-        status: "available",
+        status: "Available",
         active: true,
-        rooms_completed: 0,
+        rooms_completed: [],
         ...updates
       };
       hks.push(fallbackHk);

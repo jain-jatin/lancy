@@ -11,11 +11,40 @@ import { BottomNav, Tab } from "@/UI/components/BottomNav";
 import { RoomsView } from "@/UI/views/RoomsView";
 import { TasksView } from "@/UI/views/TasksView";
 import { AssignmentPlanCard } from "@/UI/components/AssignmentPlanCard";
-import { Room, housekeepers, Housekeeper, CHECKOUT_ROOMS } from "@/simulation/data";
+import { Room, housekeepers, Housekeeper, CHECKOUT_ROOMS, RoomStatus } from "@/simulation/data";
 import { lancyService } from "@/Backend/services/lancy-service";
 import { compileSimulation, timeToMinutes, minutesToTime } from "@/simulation/engine";
 import { AppSelect } from "@/UI/components/AppSelect";
 import { supabase, isRealSupabaseConfigured } from "@/Backend/db/supabase";
+
+const TIME_STEPS: Record<number, [number, number]> = {
+  0: [9, 0],
+  1: [10, 0],
+  2: [10, 30],
+  3: [11, 0],
+  4: [11, 30],
+  5: [12, 0]
+};
+
+const getSimDateTime = (step: number) => {
+  const [h, m] = TIME_STEPS[step] || [9, 0];
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  d.setSeconds(0, 0);
+  d.setMilliseconds(0);
+  return d;
+};
+
+const formatStepTime = (step: number) => {
+  const [h, m] = TIME_STEPS[step] || [9, 0];
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+};
 
 export const Route = createFileRoute("/")({ component: LancyApp });
 
@@ -74,10 +103,10 @@ function LancyApp() {
       render: () => (
         <div className="flex flex-wrap gap-2 mt-1 pl-1">
           <button
-            onClick={() => onSendRef.current("Yes, assign rooms")}
+            onClick={() => onSendRef.current("Yes, assign tasks")}
             className="h-9 px-4 rounded-full border border-emerald-600 bg-white text-[13px] font-semibold text-emerald-700 active:bg-emerald-50 hover:bg-emerald-50 transition-all shadow-sm"
           >
-            Yes, assign rooms
+            Yes, assign tasks
           </button>
         </div>
       )
@@ -167,6 +196,18 @@ function LancyApp() {
   );
 
   const [selectedTime, setSelectedTime] = useState("07:00");
+  const [currentStep, setCurrentStep] = useState(0);
+  const [assignmentsConfirmed, setAssignmentsConfirmed] = useState(false);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const today = new Date().toISOString().split('T')[0];
+
+  useEffect(() => {
+    const [h, m] = TIME_STEPS[currentStep] || [9, 0];
+    const hh = String(h).padStart(2, "0");
+    const mm = String(m).padStart(2, "0");
+    setSelectedTime(`${hh}:${mm}`);
+  }, [currentStep]);
+
   const [simState, setSimState] = useState(() => compileSimulation("07:00"));
   const [dbHksList, setDbHksList] = useState<Housekeeper[]>([]);
   const roomsList = Object.values(simState.rooms);
@@ -176,7 +217,7 @@ function LancyApp() {
     const triggerProactiveGreeting = async () => {
       const currentMins = timeToMinutes(selectedTime);
       const arrivalTimeStr = "07:00";
-      
+
       const dbHks = await lancyService.getHousekeepers();
       const hk = dbHks.find((h) => h.name === activeHkName);
       const hasCheckedIn = hk && hk.status && hk.status !== "Not Arrived" && hk.status !== "ABSENT";
@@ -243,17 +284,96 @@ function LancyApp() {
     const syncFromDb = async () => {
       const dbRooms = await lancyService.getRooms();
       const dbHks = await lancyService.getHousekeepers();
+
+      // Fetch working assignments state
+      let dbAssignments: any[] = [];
+      if (isRealSupabaseConfigured && supabase) {
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          const { data } = await supabase
+            .from('room_assignments')
+            .select('*')
+            .eq('shift_date', today)
+            .order('housekeeper_name')
+            .order('queue_position');
+          if (data) {
+            dbAssignments = data;
+            setRooms(data);
+          }
+
+          // Fetch shifts simulation config
+          const { data: config } = await supabase
+            .from('shifts')
+            .select('*')
+            .eq('id', 1)
+            .single();
+          if (config) {
+            setCurrentStep(config.current_step || 0);
+            setAssignmentsConfirmed(config.assignments_confirmed || false);
+          }
+        } catch (e) {
+          console.warn("Real-time sync error:", e);
+        }
+      }
+
+      const isoToLocalTimeStr = (isoStr: string | null | undefined): string | null => {
+        if (!isoStr) return null;
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) {
+          // If it is already a time string like "10:00"
+          if (typeof isoStr === 'string' && isoStr.includes(':')) {
+            return isoStr.substring(0, 5);
+          }
+          return null;
+        }
+        const h = d.getHours().toString().padStart(2, "0");
+        const m = d.getMinutes().toString().padStart(2, "0");
+        return `${h}:${m}`;
+      };
+
       setDbHksList(dbHks);
       setSimState((prev) => {
         const updatedRooms = { ...prev.rooms };
-        dbRooms.forEach((r) => {
-          if (updatedRooms[r.number]) {
-            updatedRooms[r.number] = {
-              ...updatedRooms[r.number],
-              ...r,
-            };
-          }
-        });
+
+        if (dbAssignments.length > 0) {
+          // Sync from working room_assignments table
+          dbAssignments.forEach((r) => {
+            const num = r.room_number;
+            if (updatedRooms[num]) {
+              let displayStatus: RoomStatus = (r.status || 'dirty').toLowerCase() as RoomStatus;
+              if (currentStep === 0 && displayStatus !== 'ready') {
+                displayStatus = 'occupied';
+              }
+              updatedRooms[num] = {
+                ...updatedRooms[num],
+                status: displayStatus,
+                label: displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1),
+                attendant: r.housekeeper_name,
+                scheduled_start_time: isoToLocalTimeStr(r.scheduled_start),
+                scheduled_end_time: isoToLocalTimeStr(r.scheduled_end),
+                actual_start_time: isoToLocalTimeStr(r.actual_start),
+                actual_end_time: isoToLocalTimeStr(r.actual_end),
+              };
+            }
+          });
+        } else {
+          // Sync from master inventory rooms table
+          dbRooms.forEach((r) => {
+            if (updatedRooms[r.number]) {
+              let displayStatus: RoomStatus = (r.status || 'occupied').toLowerCase() as RoomStatus;
+              if (currentStep === 0 && displayStatus !== 'ready') {
+                displayStatus = 'occupied';
+              }
+              updatedRooms[r.number] = {
+                ...updatedRooms[r.number],
+                ...r,
+                status: displayStatus,
+                label: displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1),
+              };
+            }
+          });
+        }
+
         const updatedHks = { ...prev.housekeepers };
         dbHks.forEach((h) => {
           if (updatedHks[h.name]) {
@@ -266,6 +386,7 @@ function LancyApp() {
             };
           }
         });
+
         return {
           ...prev,
           rooms: updatedRooms,
@@ -294,6 +415,12 @@ function LancyApp() {
             syncFromDb();
           }
         )
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'shifts' },
+          () => {
+            syncFromDb();
+          }
+        )
         .subscribe();
     }
 
@@ -307,7 +434,7 @@ function LancyApp() {
   }, [selectedTime, tab]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const onSendRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const onSendRef = useRef<(text: string) => Promise<void>>(async () => { });
 
   const pushMsg = (node: React.ReactNode, id: string = crypto.randomUUID()) =>
     setExtra((p) => [...p, { id, render: () => node }]);
@@ -557,11 +684,11 @@ function LancyApp() {
       pushMsg(
         <LancyBubble>
           {`It is ${time}. Checkout has not started yet. ` +
-          `Your team is ready and waiting.\n\n` +
-          `First rooms to open at 10:00 AM:\n` +
-          firstRooms.map(r =>
-            `${r.housekeeper_name} → Room ${r.room_number} (${r.room_type})`
-          ).join('\n')}
+            `Your team is ready and waiting.\n\n` +
+            `First rooms to open at 10:00 AM:\n` +
+            firstRooms.map(r =>
+              `${r.housekeeper_name} → Room ${r.room_number} (${r.room_type})`
+            ).join('\n')}
         </LancyBubble>
       );
       return;
@@ -572,16 +699,16 @@ function LancyApp() {
       pushMsg(
         <LancyBubble>
           {`It is 10:00 AM. Checkouts processed. ` +
-          `Your team is moving to their first rooms now.\n\n` +
-          nowCleaning
-            .sort((a, b) => a.housekeeper_name.localeCompare(b.housekeeper_name))
-            .map(r =>
-              `${r.housekeeper_name} → Room ${r.room_number} (${r.room_type})`
-            ).join('\n') +
-          `\n\nFirst wave completes around ` +
-          formatTime(
-            new Date(Math.max(...nowCleaning.map(r => new Date(r.scheduled_end).getTime())))
-          ) + `.`}
+            `Your team is moving to their first rooms now.\n\n` +
+            nowCleaning
+              .sort((a, b) => a.housekeeper_name.localeCompare(b.housekeeper_name))
+              .map(r =>
+                `${r.housekeeper_name} → Room ${r.room_number} (${r.room_type})`
+              ).join('\n') +
+            `\n\nFirst wave completes around ` +
+            formatTime(
+              new Date(Math.max(...nowCleaning.map(r => new Date(r.scheduled_end).getTime())))
+            ) + `.`}
         </LancyBubble>
       );
       return;
@@ -612,13 +739,13 @@ function LancyApp() {
         .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime())[0];
       msg += `${stillWaiting.length} rooms still waiting. `;
       msg += `Next up: Room ${next.room_number} with ${next.housekeeper_name} ` +
-             `at ${formatTime(new Date(next.scheduled_start))}.`;
+        `at ${formatTime(new Date(next.scheduled_start))}.`;
     }
 
     // All done
     if (stillWaiting.length === 0 && nowCleaning.length === 0) {
       msg = `All ${nowReady.length} rooms are ready for guests. ` +
-            `Your team finished ahead of the 1:00 PM deadline. `;
+        `Your team finished ahead of the 1:00 PM deadline. `;
     }
 
     pushMsg(
@@ -642,256 +769,227 @@ function LancyApp() {
     return date;
   };
 
-  const buildSimulateMessage = (time: string, assignments: any[]) => {
-    if (!assignments || assignments.length === 0) {
-      return "I could not find any room assignments for today. " +
-             "Please confirm the assignment plan first.";
+  const addLancyMessage = async (content: string) => {
+    pushMsg(<LancyBubble>{content}</LancyBubble>);
+    if (isRealSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('messages')
+          .insert({
+            role: 'lancy',
+            content,
+            shift_date: today
+          });
+      } catch (e) {
+        console.warn("Failed to insert message:", e);
+      }
     }
-
-    const simDT = todayAt(time);
-
-    const ready    = assignments.filter(r => r.status === 'READY');
-    const cleaning = assignments.filter(r => r.status === 'CLEANING');
-    const waiting  = assignments.filter(r => r.status === 'DIRTY');
-    const occupied = assignments.filter(r => r.status === 'OCCUPIED');
-
-    const parts = [];
-
-    if (cleaning.length > 0) {
-      const lines = cleaning.map(r => {
-        const eta = formatTime(r.scheduled_end);
-        return `Room ${r.room_number} (${r.room_type}) — ` +
-               `${r.housekeeper_name}, done by ${eta}`;
-      });
-      parts.push(`Being cleaned right now:\n${lines.join('\n')}`);
-    }
-
-    if (ready.length > 0) {
-      const lines = ready.map(r =>
-        `Room ${r.room_number} — ${r.housekeeper_name}`
-      );
-      parts.push(`Ready for guests:\n${lines.join('\n')}`);
-    }
-
-    if (waiting.length > 0) {
-      const next = waiting
-        .sort((a,b) =>
-          new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()
-        )[0];
-      parts.push(
-        `${waiting.length} rooms still queued. ` +
-        `Next: Room ${next.room_number} with ` +
-        `${next.housekeeper_name} at ${formatTime(next.scheduled_start)}.`
-      );
-    }
-
-    if (cleaning.length === 0 && ready.length === 0 && waiting.length > 0) {
-      parts.push(
-        `It is ${time}. Checkouts start at 10:00 AM. ` +
-        `Team is ready. ${waiting.length} rooms queued.`
-      );
-    }
-
-    const activeTurnoverCount = assignments.filter(r => r.status !== 'OCCUPIED').length;
-    if (cleaning.length === 0 && ready.length === activeTurnoverCount && activeTurnoverCount > 0) {
-      parts.push(`All rooms are guest ready. Shift complete.`);
-    }
-
-    return parts.join('\n\n');
   };
 
-  const handleSimulate = async (time: string) => {
-    setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
-    clearLatestNudges();
-    setSelectedTime(time);
+  const handleNext = async () => {
+    const newStep = currentStep + 1;
+    if (newStep > 5) return;
 
-    const [hours, minutes] = time.split(':').map(Number);
-    const simDateTime = new Date();
-    simDateTime.setHours(hours, minutes, 0, 0);
-
-    const today = new Date().toISOString().split('T')[0];
-
-    let assignments: any[] = [];
-    let isRoomsFallback = false;
+    const simTime = getSimDateTime(newStep);
 
     if (isRealSupabaseConfigured && supabase) {
-      // FIX 1: Add temporary console logging diagnostic block and remove shift_date filter
-      const { data, error } = await supabase
+      const { data: roomsData } = await supabase
         .from('room_assignments')
-        .select('*');
+        .select('*')
+        .neq('status', 'OCCUPIED');
 
-      console.log('Total rows:', data?.length);
-      console.log('Error:', error);
-      console.log('Sample row:', data?.[0]);
-
-      if (data && data.length > 0) {
-        assignments = data
-          .filter(r => r.status !== 'OCCUPIED')
-          .map(r => ({
-            id: r.id,
-            room_number: r.room_number || r.number,
-            room_type: r.room_type || r.type || 'Standard',
-            housekeeper_name: r.housekeeper_name || r.attendant || 'Ana',
-            status: r.status,
-            scheduled_start: r.scheduled_start,
-            scheduled_end: r.scheduled_end,
-            actual_start: r.actual_start,
-            actual_end: r.actual_end,
-          }));
-      } else {
-        // Fallback to rooms table in case assignments table doesn't exist or is empty
-        const { data: dbRooms } = await supabase
-          .from('rooms')
-          .select('*');
-
-        if (dbRooms && dbRooms.length > 0) {
-          isRoomsFallback = true;
-          assignments = dbRooms
-            .filter(r => CHECKOUT_ROOMS.includes(r.number) && r.attendant)
-            .map(r => ({
-              id: r.id,
-              room_number: r.number,
-              room_type: r.type === "STE" ? "Suite" : r.type === "DLX" ? "Deluxe" : "Standard",
-              housekeeper_name: r.attendant || 'Ana',
-              status: r.status ? r.status.toUpperCase() : 'DIRTY',
-              scheduled_start: r.scheduled_start_time || `${today}T10:00:00.000Z`,
-              scheduled_end: r.scheduled_end_time || `${today}T10:25:00.000Z`,
-              actual_start: r.actual_start_time,
-              actual_end: r.actual_end_time,
-              is_rooms_fallback: true,
-            }));
-        }
-      }
-
-      if (assignments.length === 0) {
-        pushMsg(
-          <LancyBubble>
-            I could not find any room assignments for today. Please confirm the assignment plan first.
-          </LancyBubble>
+      if (!roomsData || roomsData.length === 0) {
+        addLancyMessage(
+          "No assignments found. Please confirm assignments first."
         );
         return;
       }
 
-      const updates = [];
-      const updatedAssignments = [];
-
-      for (const room of assignments) {
+      const updates = roomsData.map(room => {
         const start = new Date(room.scheduled_start);
         const end = new Date(room.scheduled_end);
+        const st = simTime.getTime();
 
-        let newStatus = room.status;
+        let status = 'DIRTY';
         let actual_start = room.actual_start;
         let actual_end = room.actual_end;
 
-        if (simDateTime >= start && simDateTime < end) {
-          newStatus = 'CLEANING';
+        if (st >= start.getTime() && st < end.getTime()) {
+          status = 'CLEANING';
           actual_start = room.scheduled_start;
-        } else if (simDateTime >= end) {
-          newStatus = 'READY';
+          actual_end = null;
+        } else if (st >= end.getTime()) {
+          status = 'READY';
           actual_start = room.scheduled_start;
           actual_end = room.scheduled_end;
         } else {
-          newStatus = 'DIRTY';
+          status = 'DIRTY';
+          actual_start = null;
+          actual_end = null;
         }
 
-        const updatedRoom = {
-          ...room,
-          status: newStatus,
-          actual_start,
-          actual_end,
-        };
-        updatedAssignments.push(updatedRoom);
-
-        // Keep rooms table in sync
-        await lancyService.updateRoomStatus(room.room_number, newStatus.toLowerCase() as any, {
+        // Keep rooms table in sync as well
+        lancyService.updateRoomStatus(room.room_number, status.toLowerCase() as any, {
           actual_start_time: actual_start,
           actual_end_time: actual_end,
         });
 
-        if (!room.is_rooms_fallback) {
-          updates.push(
-            supabase
-              .from('room_assignments')
-              .update({ status: newStatus, actual_start, actual_end })
-              .eq('id', room.id)
-          );
-        }
+        return supabase!
+          .from('room_assignments')
+          .update({ status, actual_start, actual_end })
+          .eq('id', room.id);
+      });
+
+      await Promise.all(updates);
+
+      await supabase!
+        .from('shifts')
+        .update({ current_step: newStep })
+        .eq('id', 1);
+    }
+
+    setCurrentStep(newStep);
+    await buildLancyStepMessage(newStep);
+  };
+
+  const buildLancyStepMessage = async (step: number) => {
+    if (isRealSupabaseConfigured && supabase) {
+      const { data: roomsData } = await supabase
+        .from('room_assignments')
+        .select('*')
+        .neq('status', 'OCCUPIED');
+
+      if (!roomsData) return;
+
+      const ready = roomsData.filter(r => r.status === 'READY');
+      const cleaning = roomsData.filter(r => r.status === 'CLEANING');
+      const dirty = roomsData.filter(r => r.status === 'DIRTY');
+      const timeLabel = formatStepTime(step);
+
+      if (step === 1) {
+        addLancyMessage(
+          `Checkout complete. Team started cleaning rooms.\n\n` +
+          cleaning.map(r =>
+            `${r.housekeeper_name} → Room ${r.room_number} ` +
+            `(${r.room_type}), ready by ` +
+            `${formatTime(new Date(r.scheduled_end))}`
+          ).join('\n') +
+          (dirty.length > 0 ? `\n\n${dirty.length} rooms queued.` : '')
+        );
+        return;
       }
 
-      if (updates.length > 0) {
-        await Promise.all(updates);
+      if (step === 5 || roomsData.every(r => r.status === 'READY')) {
+        addLancyMessage(
+          `${ready.length} rooms guest ready. ` +
+          `12:00 PM. Checkin begins.`
+        );
+        return;
       }
 
-      assignments = updatedAssignments;
-    } else {
-      // Mock track:
-      const dbRooms = await lancyService.getRooms();
-      const mockRooms = dbRooms.filter(r => CHECKOUT_ROOMS.includes(r.number) && r.attendant);
+      let msg = `${timeLabel}. ${ready.length} rooms ready.\n\n`;
 
-      for (const r of mockRooms) {
-        const start = r.scheduled_start_time ? new Date(r.scheduled_start_time) : new Date(`${today}T10:00:00`);
-        const end = r.scheduled_end_time ? new Date(r.scheduled_end_time) : new Date(`${today}T10:25:00`);
-
-        let newStatus = r.status.toUpperCase();
-        let actual_start: string | null = null;
-        let actual_end: string | null = null;
-
-        if (simDateTime >= start && simDateTime < end) {
-          newStatus = 'CLEANING';
-          actual_start = start.toISOString();
-        } else if (simDateTime >= end) {
-          newStatus = 'READY';
-          actual_start = start.toISOString();
-          actual_end = end.toISOString();
-        } else {
-          newStatus = 'DIRTY';
-        }
-
-        const roomData = {
-          room_number: r.number,
-          housekeeper_name: r.attendant || "Ana",
-          room_type: r.type === "STE" ? "Suite" : r.type === "DLX" ? "Deluxe" : "Standard",
-          scheduled_start: start.toISOString(),
-          scheduled_end: end.toISOString(),
-          status: newStatus,
-          actual_start: actual_start,
-          actual_end: actual_end,
-        };
-        assignments.push(roomData);
-
-        await lancyService.updateRoomStatus(r.number, newStatus.toLowerCase() as any, {
-          actual_start_time: actual_start || undefined,
-          actual_end_time: actual_end || undefined,
+      if (cleaning.length > 0) {
+        cleaning.forEach(r => {
+          const minsLeft = Math.max(0, Math.round(
+            (new Date(r.scheduled_end).getTime() - getSimDateTime(step).getTime()) / 60000
+          ));
+          msg += `${r.housekeeper_name} → Room ${r.room_number}, ` +
+            `${minsLeft} mins left\n`;
         });
       }
-    }
 
-    // Refresh simulation and UI local states
-    const freshRooms = await lancyService.getRooms();
-    const freshHks = await lancyService.getHousekeepers();
-    setDbHksList(freshHks);
-    setSimState(compileSimulation(time, freshRooms, freshHks));
+      if (dirty.length > 0) {
+        msg += `\n${dirty.length} rooms pending.`;
+      }
 
-    // Print the custom Lancy message using buildSimulateMessage
-    const simMessage = buildSimulateMessage(time, assignments);
-    pushMsg(
-      <LancyBubble>
-        <span className="whitespace-pre-wrap">{simMessage}</span>
-      </LancyBubble>
-    );
-
-    // Call proactive analyzeAndAlert to detect and report concerns
-    const proactiveAlert = await lancyService.analyzeAndAlert(time, freshRooms);
-    if (proactiveAlert) {
-      setTimeout(() => {
-        pushMsg(
-          <LancyBubble>
-            {proactiveAlert}
-          </LancyBubble>
-        );
-      }, 600);
+      addLancyMessage(msg.trim());
     }
   };
+
+  const initApp = async () => {
+    // 1. Always reset local storage mock keys to wipe mock database residues!
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("lancy_local_rooms");
+        localStorage.removeItem("lancy_local_housekeepers");
+        localStorage.removeItem("lancy_local_messages");
+        localStorage.removeItem("lancy_local_nudges");
+        localStorage.removeItem("lancy_local_shift");
+        localStorage.removeItem("lancy_local_supervisor_cards");
+        localStorage.removeItem("lancy_local_maintenance_tickets");
+        localStorage.removeItem("lancy_local_incidents");
+      } catch (e) {
+        console.warn("Wiping localStorage failed:", e);
+      }
+    }
+
+    // 2. Reset real Supabase database if configured
+    if (isRealSupabaseConfigured && supabase) {
+      try {
+        // Reset shifts table in database
+        await supabase
+          .from('shifts')
+          .upsert({ id: 1, current_step: 0, assignments_confirmed: false });
+
+        // Reset room_assignments table in database
+        await supabase
+          .from('room_assignments')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+
+        // Reset housekeepers master queue assignments and active status
+        const { data: hks } = await supabase
+          .from('housekeepers')
+          .select('name');
+        if (hks) {
+          for (const hk of hks) {
+            await supabase
+              .from('housekeepers')
+              .update({
+                rooms: [],
+                current_room: null,
+                current_activity: null
+              })
+              .eq('name', hk.name);
+          }
+        }
+
+        // Reset master rooms table to clear previous assignments and statuses
+        await supabase
+          .from('rooms')
+          .update({
+            attendant: null,
+            scheduled_start_time: null,
+            scheduled_end_time: null,
+            actual_start_time: null,
+            actual_end_time: null,
+            cleaned_by_name: null,
+            status: 'occupied'
+          })
+          .neq('number', '0');
+
+        await supabase
+          .from('rooms')
+          .update({ status: 'ready' })
+          .in('number', ['501', '504']);
+      } catch (e) {
+        console.warn("initApp Supabase reset failed:", e);
+      }
+    }
+
+    // 3. Reset local state variables
+    setCurrentStep(0);
+    setAssignmentsConfirmed(false);
+    setRooms([]);
+
+    // 4. Instantly trigger a complete state synchronisation with the newly cleaned database!
+    window.dispatchEvent(new Event("lancy-refetch-rooms"));
+  };
+
+  useEffect(() => {
+    initApp();
+  }, []);
 
   const handleUpdateRoomStatus = async (number: string, status: Room["status"], updates?: Partial<Room>) => {
     if (number) {
@@ -914,8 +1012,8 @@ function LancyApp() {
 
         // Relayout chat notification to Marcus
         const receptionMsg = `Reception has been alerted to reassign any upcoming guests for Room ${number}.`;
-        const nextTaskMsg = nextRoom 
-          ? `${workingHk.name} has been reassigned to their next room in queue: Room ${nextRoom}.` 
+        const nextTaskMsg = nextRoom
+          ? `${workingHk.name} has been reassigned to their next room in queue: Room ${nextRoom}.`
           : `${workingHk.name} has completed their queue and is now available.`;
 
         pushMsg(
@@ -933,10 +1031,10 @@ function LancyApp() {
         );
 
         // Send housekeeper a notification in their chat tab
-        const hkMsg = nextRoom 
+        const hkMsg = nextRoom
           ? `Marcus has blocked Room ${number} due to maintenance. Please stop work and proceed to Room ${nextRoom}.`
           : `Marcus has blocked Room ${number} due to maintenance. Please stop work and standby for new tasks.`;
-        
+
         await lancyService.addMessage("lancy", workingHk.name, hkMsg);
 
         setHkChatMap((prev) => ({
@@ -1110,6 +1208,66 @@ function LancyApp() {
         scheduled_end_time: minutesToTime(end),
       });
       currentMins = end;
+
+      // Find toHk anchor: end time of their last room
+      // If they have no rooms, start at 10:00 AM (600 mins)
+      const toHkCurrentRooms = toHk.rooms || []
+      let toHkAnchor = 600
+
+      if (toHkCurrentRooms.length > 0) {
+        for (const num of toHkCurrentRooms) {
+          const r = dbRooms.find(rm => rm.number === num)
+          if (!r) continue
+          const duration = getDuration(r.type)
+          toHkAnchor += duration
+        }
+      }
+
+      // Insert reassigned room at correct priority position
+      const typeOrder: Record<string, number> = {
+        Suite: 0, Deluxe: 1, Standard: 2
+      }
+      const movedRoom = dbRooms.find(rm => rm.number === roomNum)
+      const movingPriority = typeOrder[movedRoom?.type ?? 'Standard'] ?? 2
+
+      let insertAt = toHkCurrentRooms.length
+      for (let i = 0; i < toHkCurrentRooms.length; i++) {
+        const r = dbRooms.find(rm => rm.number === toHkCurrentRooms[i])
+        if (!r) continue
+        if ((typeOrder[r.type] ?? 2) > movingPriority) {
+          insertAt = i
+          break
+        }
+      }
+
+      const updatedToRooms = [
+        ...toHkCurrentRooms.slice(0, insertAt),
+        roomNum,
+        ...toHkCurrentRooms.slice(insertAt)
+      ]
+
+      await lancyService.updateHousekeeper(toHkName, { rooms: updatedToRooms })
+
+      // Recalculate toHk complete queue from anchor
+      // Must recalculate ALL rooms not just the new one
+      let toCurrentMins = 600
+
+      // First advance past any already-completed rooms
+      // by finding the true anchor from scheduled times
+      // For simplicity recalculate entire queue from 10 AM
+      for (const num of updatedToRooms) {
+        const r = dbRooms.find(rm => rm.number === num)
+        if (!r) continue
+        const duration = getDuration(r.type)
+        const start = toCurrentMins
+        const end = toCurrentMins + duration
+
+        await lancyService.updateRoomStatus(num, r.status, {
+          scheduled_start_time: minutesToTime(start),
+          scheduled_end_time: minutesToTime(end),
+        })
+        toCurrentMins = end
+      }
     }
 
     const toRooms = toHk.rooms || [];
@@ -1126,7 +1284,7 @@ function LancyApp() {
         newToRooms.push(num);
         continue;
       }
-      
+
       if (!inserted) {
         if (targetType === "STE" && r.type !== "STE") {
           newToRooms.push(roomNum);
@@ -1209,9 +1367,9 @@ function LancyApp() {
 
     // NLP 1: SHOW TASKS
     const showTasksMatch = clean.match(/show\s+(\w+)'s\s+tasks/i) ||
-                           clean.match(/what\s+does\s+(\w+)\s+have/i) ||
-                           clean.match(/(\w+)'s\s+queue/i) ||
-                           clean.match(/upcoming\s+tasks\s+for\s+(\w+)/i);
+      clean.match(/what\s+does\s+(\w+)\s+have/i) ||
+      clean.match(/(\w+)'s\s+queue/i) ||
+      clean.match(/upcoming\s+tasks\s+for\s+(\w+)/i);
     if (showTasksMatch) {
       const name = showTasksMatch[1].charAt(0).toUpperCase() + showTasksMatch[1].slice(1).toLowerCase();
       const validNames = ["Ana", "Rosa", "James", "Priya", "Sofia"];
@@ -1311,8 +1469,8 @@ function LancyApp() {
         isReorder = true;
       }
     } else {
-      const m = clean.match(/room\s+(\d{3})\s+should\s+be\s+number\s+(\d+)/i) || 
-                clean.match(/move\s+room\s+(\d{3})\s+to\s+position\s+(\d+)/i);
+      const m = clean.match(/room\s+(\d{3})\s+should\s+be\s+number\s+(\d+)/i) ||
+        clean.match(/move\s+room\s+(\d{3})\s+to\s+position\s+(\d+)/i);
       if (m) {
         reorderRoom = m[1];
         reorderPos = parseInt(m[2], 10);
@@ -1635,12 +1793,12 @@ function LancyApp() {
     }
 
     // A. Intercept tab transitions
-    if (clean.includes("room turnarounds") || clean.includes("turnarounds") || clean.includes("go to rooms")) {
+    if (clean === "rooms" || clean.includes("go to rooms") || clean.includes("room turnarounds") || clean === "rooms tab") {
       setTab("rooms");
       toast.info("Switching to Rooms tab.");
       return;
     }
-    if (clean.includes("go to tasks") || clean.includes("tasks")) {
+    if (clean === "tasks" || clean.includes("go to tasks") || clean.includes("view tasks") || clean === "tasks tab") {
       setTab("tasks");
       toast.info("Switching to Tasks tab.");
       return;
@@ -1693,7 +1851,7 @@ function LancyApp() {
 
     // C. Intercept Deterministic Assignment Generation
     const assignTriggers = [
-      "yes, assign rooms", "yes", "assign", "generate", "go ahead",
+      "yes, assign tasks", "yes", "assign", "generate", "go ahead",
       "sure", "ok", "do it", "please assign", "let's start", "yep"
     ];
     // Check if the input is an assignment trigger and assignments are not yet done
@@ -1710,6 +1868,17 @@ function LancyApp() {
       };
 
       await lancyService.confirmAssignments(plan);
+      if (isRealSupabaseConfigured && supabase) {
+        try {
+          await supabase
+            .from('shifts')
+            .update({ assignments_confirmed: true })
+            .eq('id', 1);
+        } catch (e) {
+          console.warn("Failed to confirm shifts assignments in DB:", e);
+        }
+      }
+      setAssignmentsConfirmed(true);
       toast.success("Assignments generated!");
 
       setTimeout(async () => {
@@ -1759,7 +1928,7 @@ function LancyApp() {
 
     setTimeout(() => {
       pushMsg(<LancyBubble>{res.reply}</LancyBubble>);
-      
+
       if (res.buttons && res.buttons.length > 0) {
         pushMsg(
           <div className="flex flex-wrap gap-2 mt-1 pl-1">
@@ -1796,18 +1965,17 @@ function LancyApp() {
               <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider leading-none">Maplewood Suites</div>
               <h1 className="text-[20px] font-extrabold tracking-tight text-[#1A1A2E] leading-tight">Marcus</h1>
             </div>
-            {/* Right: compact time dropdown + simulate */}
-            <div data-tour="simulate" className="flex items-center gap-2 flex-1 justify-end">
-              <AppSelect
-                value={selectedTime}
-                onChange={setSelectedTime}
-                options={timePills}
-              />
+            {/* Right: Next button + plain text simulation time */}
+            <div data-tour="simulate" className="flex items-center gap-3 flex-1 justify-end">
+              <span className="text-[13px] font-extrabold text-[#1A1A2E] bg-[#F3F2EF] border border-[#E8E5DF] px-3 py-1.5 rounded-[10px] select-none">
+                {formatStepTime(currentStep)}
+              </span>
               <button
-                onClick={() => handleSimulate(selectedTime)}
-                className="h-9 px-4 rounded-[10px] bg-accent text-white text-[13px] font-bold active:scale-[0.97] transition-all shrink-0 shadow-sm hover:bg-accent/90"
+                onClick={handleNext}
+                disabled={(currentStep === 0 && !assignmentsConfirmed) || currentStep === 5}
+                className="h-9 px-4 rounded-[10px] bg-[#2A9D8F] text-white text-[13px] font-extrabold active:scale-[0.97] transition-all shrink-0 shadow-sm hover:bg-[#208075] disabled:opacity-40 disabled:pointer-events-none disabled:active:scale-100 cursor-pointer"
               >
-                Simulate
+                {currentStep === 5 ? "Done" : "Next"}
               </button>
             </div>
           </div>
@@ -1858,15 +2026,6 @@ function LancyApp() {
                       </LancyCard>
                     )}
 
-                    {/* SCENARIO A: Guest Damage Card (from 10:10 AM) */}
-                    {timeToMinutes(selectedTime) >= timeToMinutes("10:10") && (
-                      <LancyBubble>
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#991B1B] mb-1">
-                          🚨 Room 204 Guest Damage
-                        </div>
-                        {"Rosa reported guest damage in Room 204 (broken mirror). I have notified the front desk. Charge will be applied to the departing guest's bill automatically."}
-                      </LancyBubble>
-                    )}
 
                     {/* SCENARIO B: Minor TV Issue Card (from 11:15 AM) */}
                     {timeToMinutes(selectedTime) >= timeToMinutes("11:15") && (

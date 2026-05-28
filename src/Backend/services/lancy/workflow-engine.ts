@@ -51,21 +51,26 @@ export const workflowEngine = {
 
     for (const [hkName, roomsList] of Object.entries(plan)) {
       hkPromises.push(dbOperations.updateHousekeeper(hkName, { rooms: roomsList }));
-      
+
       let currentMins = 600; // 10:00 AM
       for (const rNum of roomsList) {
         const roomObj = allRooms.find(r => r.number === rNum);
         const rType = roomObj ? roomObj.type : "STD";
         const duration = rType === "STE" ? 45 : rType === "DLX" ? 35 : 25;
-        
+
         const start = currentMins;
         const end = currentMins + duration;
 
-        const startStr = `${Math.floor(start / 60).toString().padStart(2, "0")}:${(start % 60).toString().padStart(2, "0")}:00`;
-        const endStr = `${Math.floor(end / 60).toString().padStart(2, "0")}:${(end % 60).toString().padStart(2, "0")}:00`;
+        const toLocalISO = (hours: number, minutes: number) => {
+          const d = new Date()
+          d.setHours(hours, minutes, 0, 0)
+          d.setSeconds(0, 0)
+          d.setMilliseconds(0)
+          return d.toISOString()
+        };
 
-        const scheduled_start = new Date(`${today}T${startStr}`).toISOString();
-        const scheduled_end = new Date(`${today}T${endStr}`).toISOString();
+        const scheduled_start = toLocalISO(Math.floor(start / 60), start % 60);
+        const scheduled_end = toLocalISO(Math.floor(end / 60), end % 60);
 
         roomPromises.push((async () => {
           await dbOperations.updateRoomStatus(rNum, "dirty", {
@@ -166,7 +171,7 @@ ${roomLines}
 Start with Room ${assignedRoomNums[0]}. Good luck!`;
   },
 
-  async autoAssignAllSchedules() {
+   async autoAssignAllSchedules() {
     const defaultPlan: Record<string, string[]> = {
       Ana: ["203", "201", "202"],
       Rosa: ["205", "204", "301"],
@@ -175,5 +180,22 @@ Start with Room ${assignedRoomNums[0]}. Good luck!`;
       Sofia: ["505", "403", "503"],
     };
     await this.confirmAssignments(defaultPlan);
+  },
+
+  async handleHousekeeperAbsence(hkName: string) {
+    const freshRooms = await dbOperations.getRooms();
+    const hkRooms = freshRooms.filter(r => r.attendant === hkName);
+    for (const r of hkRooms) {
+      await dbOperations.updateRoomStatus(r.number, "dirty", { attendant: undefined });
+    }
+  },
+
+  async markCleaningDone(hkName: string) {
+    const hks = await dbOperations.getHousekeepers();
+    const hk = hks.find(h => h.name === hkName);
+    if (hk && hk.current_room) {
+      await dbOperations.updateRoomStatus(hk.current_room, "ready");
+      await dbOperations.updateHousekeeper(hkName, { current_room: null, current_activity: null });
+    }
   }
 };

@@ -38,7 +38,7 @@ export const housekeeperAgent = {
     const scheduledMins = dbOperations.timeToMins(arrivalTimeStr);
     const isBelowStart = currentMins < scheduledMins;
 
-    const checkedIn = hk.status === 'PRESENT' || hk.status === 'IDLE' || hk.status === 'INSPECTION' || hk.status === 'CLEANING';
+    const checkedIn = (hk.status as any) === 'PRESENT' || (hk.status as any) === 'IDLE' || (hk.status as any) === 'INSPECTION' || (hk.status as any) === 'CLEANING';
 
     if (isBelowStart && !checkedIn) {
       if (cleanMsg.includes("yes") || cleanMsg.includes("start") || cleanMsg.includes("ready")) {

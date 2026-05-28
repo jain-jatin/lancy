@@ -1,4 +1,4 @@
-export type RoomStatus = "occupied" | "dirty" | "cleaning" | "ready";
+export type RoomStatus = "occupied" | "dirty" | "cleaning" | "ready" | "blocked" | "inspection" | "review";
 export type RoomType = "STD" | "DLX" | "STE";
 
 export interface Room {
@@ -16,6 +16,20 @@ export interface Room {
   actual_start_time?: string | null;
   actual_end_time?: string | null;
   cleaned_by_name?: string | null;
+  isBlocked?: boolean;
+  elapsed?: number | null;
+  note?: string | null;
+  flagged?: boolean;
+  priority?: boolean;
+  scheduled_start?: string | null;
+  scheduled_end?: string | null;
+  actual_start?: string | null;
+  actual_end?: string | null;
+  room_number?: string;
+  room_type?: string;
+  housekeeper_name?: string | null;
+  damageReported?: boolean;
+  startedAt?: string | null;
 }
 
 export interface Housekeeper {
@@ -23,10 +37,10 @@ export interface Housekeeper {
   rooms: string[];
   active?: boolean;
   current_room?: string | null;
-  current_activity?: "CLEANING" | null;
+  current_activity?: "CLEANING" | "INSPECTION" | null;
   rooms_completed?: string[];
   next_room?: string | null;
-  status?: "PRESENT" | "ABSENT" | "IDLE" | "CLEANING" | "Not Arrived";
+  status?: "PRESENT" | "ABSENT" | "IDLE" | "CLEANING" | "Not Arrived" | "Cleaning" | "Available" | "Inspecting" | "available" | "cleaning" | "inspecting";
 }
 
 export const housekeepers: Housekeeper[] = [
@@ -42,6 +56,9 @@ export const statusDot: Record<RoomStatus, string> = {
   dirty: "bg-[#F87171]",
   cleaning: "bg-[#D97706]",
   ready: "bg-[#2A9D8F]",
+  blocked: "bg-[#7C7C8A]",
+  inspection: "bg-[#8B5CF6]",
+  review: "bg-[#8B5CF6]",
 };
 
 export const statusBorder: Record<RoomStatus, string> = {
@@ -49,6 +66,9 @@ export const statusBorder: Record<RoomStatus, string> = {
   dirty: "border-[#FEE2E2]",
   cleaning: "border-[#FEF3C7]",
   ready: "border-[#E8F5F3]",
+  blocked: "border-[#E8E5DF]",
+  inspection: "border-[#EDE9FE]",
+  review: "border-[#EDE9FE]",
 };
 
 export const statusTag: Record<RoomStatus, string> = {
@@ -56,6 +76,9 @@ export const statusTag: Record<RoomStatus, string> = {
   dirty: "bg-[#FEE2E2] text-[#991B1B]",
   cleaning: "bg-[#FEF3C7] text-[#92400E]",
   ready: "bg-[#E8F5F3] text-[#1A6B61]",
+  blocked: "bg-[#E8E5DF] text-[#7C7C8A]",
+  inspection: "bg-[#EDE9FE] text-[#5B21B6]",
+  review: "bg-[#EDE9FE] text-[#5B21B6]",
 };
 
 export const statusLabel: Record<RoomStatus, string> = {
@@ -63,6 +86,9 @@ export const statusLabel: Record<RoomStatus, string> = {
   dirty: "Dirty",
   cleaning: "Cleaning",
   ready: "Ready",
+  blocked: "Blocked",
+  inspection: "Inspection",
+  review: "Review",
 };
 
 export const statusColor = statusDot;

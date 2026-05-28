@@ -64,11 +64,23 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
 
       // Insert room into target housekeeper queue based on priority: Suite first, Deluxe second, Standard third. Placed at the end of that type group.
       const filtered = (targetHk.rooms || []).filter((num) => num !== rNum);
+      const activeQueue: string[] = [];
+      const upcomingQueue: string[] = [];
+
+      filtered.forEach((num) => {
+        const rm = roomsList.find((r) => r.number === num);
+        if (rm && (rm.status === "ready" || rm.status === "cleaning" || rm.actual_start_time || rm.actual_end_time)) {
+          activeQueue.push(num);
+        } else {
+          upcomingQueue.push(num);
+        }
+      });
+
       const suites: string[] = [];
       const deluxe: string[] = [];
       const standard: string[] = [];
 
-      filtered.forEach((num) => {
+      upcomingQueue.forEach((num) => {
         const rm = roomsList.find((r) => r.number === num);
         if (rm?.type === "STE") suites.push(num);
         else if (rm?.type === "DLX") deluxe.push(num);
@@ -83,47 +95,83 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
         standard.push(rNum);
       }
 
-      const updatedRooms = [...suites, ...deluxe, ...standard];
+      const updatedRooms = [...activeQueue, ...suites, ...deluxe, ...standard];
 
       // Update target housekeeper rooms
       await lancyService.updateHousekeeper(targetHkName, { rooms: updatedRooms });
 
       // Recalculate timings for source housekeeper's remaining queue
       if (sourceHkName) {
-        let currentMins = 600; // 10:00 AM start
+        let lastCompletedMins = 600;
+        const sourceRoomsObjs = nextRooms.map(num => roomsList.find(r => r.number === num)).filter(Boolean) as Room[];
+        const sourceNonUpcoming = sourceRoomsObjs.filter(r => r.status === "ready" || r.status === "cleaning" || r.actual_start_time || r.actual_end_time);
+        if (sourceNonUpcoming.length > 0) {
+          let maxMins = 600;
+          for (const r of sourceNonUpcoming) {
+            const endStr = r.scheduled_end_time || r.actual_end_time;
+            if (endStr) {
+              const m = timeToMinutes(endStr);
+              if (m > maxMins) maxMins = m;
+            }
+          }
+          lastCompletedMins = maxMins;
+        }
+
+        let currentMins = lastCompletedMins;
         for (const num of nextRooms) {
           const rm = roomsList.find((r) => r.number === num);
-          const rType = rm ? rm.type : "STD";
-          const duration = rType === "STE" ? 45 : rType === "DLX" ? 35 : 25;
+          if (!rm) continue;
+
+          if (rm.status !== "ready" && rm.status !== "cleaning" && !rm.actual_start_time && !rm.actual_end_time) {
+            const duration = rm.type === "STE" ? 45 : rm.type === "DLX" ? 35 : 25;
+            const start = currentMins;
+            const end = currentMins + duration;
+
+            await lancyService.updateRoomStatus(num, "dirty", {
+              attendant: sourceHkName,
+              scheduled_start_time: minutesToTime(start),
+              scheduled_end_time: minutesToTime(end),
+            });
+
+            currentMins = end;
+          }
+        }
+      }
+
+      // Calculate new timings for target housekeeper's entire queue
+      let lastCompletedMins = 600;
+      const targetRoomsObjs = updatedRooms.map(num => roomsList.find(r => r.number === num)).filter(Boolean) as Room[];
+      const targetNonUpcoming = targetRoomsObjs.filter(r => r.status === "ready" || r.status === "cleaning" || r.actual_start_time || r.actual_end_time);
+      if (targetNonUpcoming.length > 0) {
+        let maxMins = 600;
+        for (const r of targetNonUpcoming) {
+          const endStr = r.scheduled_end_time || r.actual_end_time;
+          if (endStr) {
+            const m = timeToMinutes(endStr);
+            if (m > maxMins) maxMins = m;
+          }
+        }
+        lastCompletedMins = maxMins;
+      }
+
+      let currentMins = lastCompletedMins;
+      for (const num of updatedRooms) {
+        const rm = roomsList.find((r) => r.number === num);
+        if (!rm) continue;
+
+        if (rm.status !== "ready" && rm.status !== "cleaning" && !rm.actual_start_time && !rm.actual_end_time) {
+          const duration = rm.type === "STE" ? 45 : rm.type === "DLX" ? 35 : 25;
           const start = currentMins;
           const end = currentMins + duration;
 
           await lancyService.updateRoomStatus(num, "dirty", {
-            attendant: sourceHkName,
+            attendant: targetHkName,
             scheduled_start_time: minutesToTime(start),
             scheduled_end_time: minutesToTime(end),
           });
 
           currentMins = end;
         }
-      }
-
-      // Calculate new timings for target housekeeper's entire queue
-      let currentMins = 600; // 10:00 AM start
-      for (const num of updatedRooms) {
-        const rm = roomsList.find((r) => r.number === num);
-        const rType = rm ? rm.type : "STD";
-        const duration = rType === "STE" ? 45 : rType === "DLX" ? 35 : 25;
-        const start = currentMins;
-        const end = currentMins + duration;
-
-        await lancyService.updateRoomStatus(num, "dirty", {
-          attendant: targetHkName,
-          scheduled_start_time: minutesToTime(start),
-          scheduled_end_time: minutesToTime(end),
-        });
-
-        currentMins = end;
       }
 
       toast.success(`Room ${rNum} reassigned to ${targetHkName}`);
@@ -175,11 +223,10 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
             <button
               key={h.name}
               onClick={() => setSelectedHk(h.name)}
-              className={`px-3.5 py-1.5 rounded-full text-[12px] font-bold border transition-all active:scale-[0.96] whitespace-nowrap shrink-0 ${
-                isSelected
-                  ? "bg-[#E8F5E9] border-[#C8E6C9] text-[#2E7D32]"
-                  : "bg-[#F3F2EF] border-[#E8E5DF] text-muted-foreground hover:bg-[#E8E5DF]"
-              }`}
+              className={`px-3.5 py-1.5 rounded-full text-[12px] font-bold border transition-all active:scale-[0.96] whitespace-nowrap shrink-0 ${isSelected
+                ? "bg-[#E8F5E9] border-[#C8E6C9] text-[#2E7D32]"
+                : "bg-[#F3F2EF] border-[#E8E5DF] text-muted-foreground hover:bg-[#E8E5DF]"
+                }`}
             >
               {h.name}
             </button>
@@ -321,11 +368,10 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
                                 <button
                                   key={h.name}
                                   onClick={() => setTempHk(h.name)}
-                                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all active:scale-[0.96] ${
-                                    isSel
-                                      ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
-                                      : "bg-white border-[#E8E5DF] text-muted-foreground hover:bg-[#F8F7F4]"
-                                  }`}
+                                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all active:scale-[0.96] ${isSel
+                                    ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                    : "bg-white border-[#E8E5DF] text-muted-foreground hover:bg-[#F8F7F4]"
+                                    }`}
                                 >
                                   {h.name}
                                 </button>

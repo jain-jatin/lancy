@@ -11,9 +11,10 @@ interface Props {
   onUpdateLancy: (msg: string) => void;
   onUpdateRoomStatus: (number: string, status: Room["status"], updates?: Partial<Room>) => void;
   simTime: string;
+  onReassignRoom: (roomNum: string, fromHkName: string, toHkName: string) => Promise<any>;
 }
 
-export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus, simTime }: Props) {
+export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus, simTime, onReassignRoom }: Props) {
   const [hkList, setHkList] = useState<Housekeeper[]>([]);
   const [roomsList, setRoomsList] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,65 +66,20 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus, s
   }
 
   const handleReassign = async (newHkName: string) => {
-    const rNum = room.number;
-    const targetHk = hkList.find((h) => h.name === newHkName);
-    if (!targetHk) return;
+    try {
+      const rNum = room.number;
+      const sourceHkName = room.attendant || "Ana";
 
-    // Insert based on priority: Suite first, Deluxe second, Standard third. Placed at the end of that type group.
-    const filtered = (targetHk.rooms || []).filter((num) => num !== rNum);
-    const suites: string[] = [];
-    const deluxe: string[] = [];
-    const standard: string[] = [];
+      await onReassignRoom(rNum, sourceHkName, newHkName);
 
-    filtered.forEach((num) => {
-      const rm = roomsList.find((r) => r.number === num);
-      if (rm?.type === "STE") suites.push(num);
-      else if (rm?.type === "DLX") deluxe.push(num);
-      else standard.push(num);
-    });
-
-    if (room.type === "STE") {
-      suites.push(rNum);
-    } else if (room.type === "DLX") {
-      deluxe.push(rNum);
-    } else {
-      standard.push(rNum);
+      toast.success(`Room ${rNum} reassigned to ${newHkName}`);
+      onUpdateRoomStatus(rNum, "dirty", { attendant: newHkName });
+      await fetchLiveState();
+      onClose();
+    } catch (err: any) {
+      console.error("[RoomDetail] Reassignment error:", err);
+      toast.error(`Reassignment failed: ${err?.message || err}`);
     }
-
-    const updatedRooms = [...suites, ...deluxe, ...standard];
-
-    // Remove from other housekeeper queues
-    for (const h of hkList) {
-      if (h.name !== newHkName && h.rooms.includes(rNum)) {
-        const nextRooms = h.rooms.filter((num) => num !== rNum);
-        await lancyService.updateHousekeeper(h.name, { rooms: nextRooms });
-      }
-    }
-
-    // Update target housekeeper rooms
-    await lancyService.updateHousekeeper(newHkName, { rooms: updatedRooms });
-
-    // Calculate new timings for target housekeeper's entire queue
-    let currentMins = 600; // 10:00 AM start
-    for (const num of updatedRooms) {
-      const rm = roomsList.find((r) => r.number === num);
-      const rType = rm ? rm.type : "STD";
-      const duration = rType === "STE" ? 45 : rType === "DLX" ? 35 : 25;
-      const start = currentMins;
-      const end = currentMins + duration;
-
-      await lancyService.updateRoomStatus(num, "dirty", {
-        attendant: newHkName,
-        scheduled_start_time: minutesToTime(start),
-        scheduled_end_time: minutesToTime(end),
-      });
-
-      currentMins = end;
-    }
-
-    toast.success(`Room ${rNum} reassigned to ${newHkName}`);
-    onUpdateRoomStatus(rNum, "dirty", { attendant: newHkName });
-    await fetchLiveState();
   };
 
   const duration = room.type === "STE" ? 45 : room.type === "DLX" ? 35 : 25;

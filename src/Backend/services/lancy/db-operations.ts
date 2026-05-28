@@ -59,7 +59,7 @@ export const dbOperations = {
       .select("*")
       .order("number", { ascending: true });
     if (error || !data) return mockDb.getRooms();
-    
+
     // Auto-seed if the database is empty
     if (data.length === 0) {
       try {
@@ -81,7 +81,7 @@ export const dbOperations = {
     }
 
     return data.map((r: any) => ({
-      number: r.number,
+      number: r.room_number || r.number,
       floor: r.floor,
       type: r.type,
       status: r.status,
@@ -118,12 +118,32 @@ export const dbOperations = {
       if (updates.actual_end_time !== undefined) dbUpdates.actual_end_time = updates.actual_end_time;
       if (updates.cleaned_by_name !== undefined) dbUpdates.cleaned_by_name = updates.cleaned_by_name;
     }
-    
+
     // Sync with room_assignments table in Supabase
     if (supabase) {
       try {
         const today = new Date().toISOString().split('T')[0];
-        
+
+        const toLocalISO = (hours: number, minutes: number) => {
+          const d = new Date()
+          d.setHours(hours, minutes, 0, 0)
+          d.setSeconds(0, 0)
+          d.setMilliseconds(0)
+          return d.toISOString()
+        };
+
+        const parseToLocalISO = (timeStr: string) => {
+          if (timeStr.includes('T')) {
+            const d = new Date(timeStr);
+            return toLocalISO(d.getHours(), d.getMinutes());
+          }
+          const parts = timeStr.split(':').map(Number);
+          if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            return toLocalISO(parts[0], parts[1]);
+          }
+          return new Date(timeStr).toISOString();
+        };
+
         // Find existing assignment row
         const { data: existing } = await supabase
           .from('room_assignments')
@@ -137,13 +157,11 @@ export const dbOperations = {
         };
         if (updates) {
           if (updates.attendant !== undefined) assignmentUpdates.housekeeper_name = updates.attendant;
-          if (updates.scheduled_start_time !== undefined) {
-            const startStr = updates.scheduled_start_time.includes('T') ? updates.scheduled_start_time : `${today}T${updates.scheduled_start_time}:00`;
-            assignmentUpdates.scheduled_start = new Date(startStr).toISOString();
+          if (updates.scheduled_start_time !== undefined && updates.scheduled_start_time !== null) {
+            assignmentUpdates.scheduled_start = parseToLocalISO(updates.scheduled_start_time);
           }
-          if (updates.scheduled_end_time !== undefined) {
-            const endStr = updates.scheduled_end_time.includes('T') ? updates.scheduled_end_time : `${today}T${updates.scheduled_end_time}:00`;
-            assignmentUpdates.scheduled_end = new Date(endStr).toISOString();
+          if (updates.scheduled_end_time !== undefined && updates.scheduled_end_time !== null) {
+            assignmentUpdates.scheduled_end = parseToLocalISO(updates.scheduled_end_time);
           }
           if (updates.actual_start_time !== undefined) assignmentUpdates.actual_start = updates.actual_start_time;
           if (updates.actual_end_time !== undefined) assignmentUpdates.actual_end = updates.actual_end_time;
@@ -161,7 +179,7 @@ export const dbOperations = {
             .select('type, floor')
             .eq('number', number)
             .single();
-            
+
           const rType = roomObj ? roomObj.type : 'STD';
           const rTypeLabel = rType === 'STE' ? 'Suite' : rType === 'DLX' ? 'Deluxe' : 'Standard';
           const rFloor = roomObj ? roomObj.floor : parseInt(number.charAt(0), 10);
@@ -175,8 +193,8 @@ export const dbOperations = {
               floor: rFloor,
               shift_date: today,
               status: status.toUpperCase(),
-              scheduled_start: assignmentUpdates.scheduled_start || `${today}T10:00:00.000Z`,
-              scheduled_end: assignmentUpdates.scheduled_end || `${today}T10:25:00.000Z`,
+              scheduled_start: assignmentUpdates.scheduled_start || toLocalISO(10, 0),
+              scheduled_end: assignmentUpdates.scheduled_end || toLocalISO(10, 25),
               ...assignmentUpdates
             });
         }
@@ -252,7 +270,7 @@ export const dbOperations = {
       if (updates.rooms_completed !== undefined) dbUpdates.rooms_completed = updates.rooms_completed;
       if (updates.next_room !== undefined) dbUpdates.next_room = updates.next_room;
       if (updates.rooms !== undefined) dbUpdates.rooms = updates.rooms;
-      
+
       await supabase!
         .from("housekeepers")
         .update(dbUpdates)
@@ -299,7 +317,7 @@ export const dbOperations = {
     return data || mockDb.addMessage({ role, sender, content, type, actionData });
   },
 
-   resetAll() {
+  resetAll() {
     mockDb.resetAll();
   },
 
@@ -334,14 +352,14 @@ export const dbOperations = {
 
   async addReceptionRelay(msg: string): Promise<any> {
     if (!isRealSupabaseConfigured) {
-      return mockDb.addReceptionRelay ? mockDb.addReceptionRelay(msg) : { id: crypto.randomUUID(), message: msg };
+      return (mockDb as any).addReceptionRelay ? (mockDb as any).addReceptionRelay(msg) : { id: crypto.randomUUID(), message: msg };
     }
     const { data } = await supabase!
       .from("reception_relay")
       .insert({ message: msg })
       .select()
       .single();
-    return data || (mockDb.addReceptionRelay ? mockDb.addReceptionRelay(msg) : { id: crypto.randomUUID(), message: msg });
+    return data || ((mockDb as any).addReceptionRelay ? (mockDb as any).addReceptionRelay(msg) : { id: crypto.randomUUID(), message: msg });
   },
 
   /**
@@ -429,8 +447,8 @@ ${roomLines}
 
 OPEN MAINTENANCE TICKETS:
 ${openTickets.length > 0
-  ? openTickets.map(t => `${t.ticket_number || t.id}: Room ${t.room_number || t.room} - ${t.issue}`).join('\n')
-  : 'None'}
+        ? openTickets.map(t => `${t.ticket_number || t.id}: Room ${t.room_number || t.room} - ${t.issue}`).join('\n')
+        : 'None'}
 
 When answering about any housekeeper:
 - CLEANING room = what they are doing RIGHT NOW

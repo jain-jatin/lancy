@@ -4,7 +4,7 @@ import { apiClient } from "./api-client";
 import { dbOperations } from "./db-operations";
 import { workflowEngine } from "./workflow-engine";
 import { LANCY_TOOLS, executeTool } from "./tools";
-import { supabase, isRealSupabaseConfigured } from "../../db/supabase";
+import { supabase, isRealSupabaseConfigured, mockDb } from "../../db/supabase";
 
 // Helper: Convert minutes back to "HH:MM"
 function minsToTimeStr(mins: number): string {
@@ -25,7 +25,7 @@ export const supervisorAgent = {
       const roomType = room.type || room.room_type || "";
       const scheduledEnd = room.scheduled_end_time || room.scheduled_end || "10:00";
 
-      if (room.status === 'cleaning' || room.status === 'CLEANING') {
+      if (room.status === 'cleaning' || (room.status as string) === 'CLEANING') {
         const endMins = dbOperations.timeToMins(scheduledEnd);
         const overdueMins = simMins - endMins;
         if (overdueMins > 10) {
@@ -36,7 +36,7 @@ export const supervisorAgent = {
         }
       }
 
-      if (room.status === 'dirty' || room.status === 'DIRTY') {
+      if (room.status === 'dirty' || (room.status as string) === 'DIRTY') {
         const endMins = dbOperations.timeToMins(scheduledEnd);
         const minsToDeadline = deadlineMins - endMins;
         if (minsToDeadline < 30) {
@@ -113,7 +113,7 @@ End with a yes/no question so he can act immediately.
       return currentMins >= dbOperations.timeToMins(arrTime) && !hk.current_room;
     });
 
-    const reviews = rooms.filter(r => r.status === "review");
+    const reviews = rooms.filter(r => (r.status as string) === "review");
 
     if (currentMins <= dbOperations.timeToMins("08:00")) {
       return {
@@ -170,71 +170,41 @@ End with a yes/no question so he can act immediately.
 
       if (isRealSupabaseConfigured && supabase) {
         try {
-          const { data, error } = await supabase
-            .from('room_assignments')
-            .select('*');
+          const { data } = await supabase
+            .from('room_state')
+            .select('*')
+            .eq('shift_date', today);
 
           if (data && data.length > 0) {
             return data.map(r => ({
-              room_number: r.room_number || r.number,
-              floor: parseInt(r.room_number || r.number, 10) ? Math.floor(parseInt(r.room_number || r.number, 10) / 100) : 2,
-              room_type: r.room_type || r.type || 'Standard',
-              housekeeper_name: r.housekeeper_name || r.attendant || 'Ana',
+              room_number: r.room_number,
+              floor: r.floor,
+              room_type: r.room_type,
+              housekeeper_name: r.housekeeper_name,
               status: (r.status || 'DIRTY').toUpperCase(),
               scheduled_start: r.scheduled_start,
               scheduled_end: r.scheduled_end,
-              actual_start: r.actual_start || r.cleaning_started_at,
-              actual_end: r.actual_end || r.ready_at || r.cleaning_completed_at,
+              actual_start: r.actual_start,
+              actual_end: r.actual_end,
             }));
           }
         } catch (e) {
-          console.warn("Failed to select from room_assignments:", e);
-        }
-
-        // Fallback: Query rooms table
-        try {
-          const { data: dbRooms } = await supabase
-            .from('rooms')
-            .select('*');
-
-          if (dbRooms && dbRooms.length > 0) {
-            return dbRooms
-              .filter(r => CHECKOUT_ROOMS.includes(r.number) && r.attendant)
-              .map(r => ({
-                room_number: r.number,
-                floor: r.floor,
-                room_type: r.type === 'STE' ? 'Suite' : r.type === 'DLX' ? 'Deluxe' : 'Standard',
-                housekeeper_name: r.attendant || 'Ana',
-                status: (r.status || 'dirty').toUpperCase(),
-                scheduled_start: r.scheduled_start_time || `${today}T10:00:00.000Z`,
-                scheduled_end: r.scheduled_end_time || `${today}T10:25:00.000Z`,
-                actual_start: r.actual_start_time,
-                actual_end: r.actual_end_time,
-              }));
-          }
-        } catch (e) {
-          console.warn("Failed to select from rooms table:", e);
+          console.warn("Failed to select from room_state:", e);
         }
       }
 
-      const dbRooms = await dbOperations.getRooms();
-      return dbRooms
-        .filter(r => CHECKOUT_ROOMS.includes(r.number) && r.attendant)
-        .map(r => {
-          const start = r.scheduled_start_time ? new Date(r.scheduled_start_time) : new Date(`${today}T10:00:00`);
-          const end = r.scheduled_end_time ? new Date(r.scheduled_end_time) : new Date(`${today}T10:25:00`);
-          return {
-            room_number: r.number,
-            floor: r.floor,
-            room_type: r.type === 'STE' ? 'Suite' : r.type === 'DLX' ? 'Deluxe' : 'Standard',
-            housekeeper_name: r.attendant || 'Ana',
-            status: (r.status || 'dirty').toUpperCase(),
-            scheduled_start: start.toISOString(),
-            scheduled_end: end.toISOString(),
-            actual_start: r.actual_start_time,
-            actual_end: r.actual_end_time,
-          };
-        });
+      const states = (mockDb as any).getRoomState ? (mockDb as any).getRoomState(today) : [];
+      return states.map((r: any) => ({
+        room_number: r.room_number,
+        floor: r.floor,
+        room_type: r.room_type,
+        housekeeper_name: r.housekeeper_name,
+        status: (r.status || 'DIRTY').toUpperCase(),
+        scheduled_start: r.scheduled_start,
+        scheduled_end: r.scheduled_end,
+        actual_start: r.actual_start,
+        actual_end: r.actual_end,
+      }));
     };
 
     const formatTime = (timeStr: string | Date | null | undefined): string => {
@@ -289,13 +259,13 @@ End with a yes/no question so he can act immediately.
       if (row) {
         if (row.status === 'CLEANING') {
           reply = `Room ${rNum} (${row.room_type}, Floor ${row.floor}) is being cleaned by ${row.housekeeper_name}. ` +
-                  `Started at ${formatTime(row.actual_start)}. Done by ${formatTime(row.scheduled_end)}.`;
+            `Started at ${formatTime(row.actual_start)}. Done by ${formatTime(row.scheduled_end)}.`;
         } else if (row.status === 'DIRTY') {
           reply = `Room ${rNum} is checked out and waiting. ` +
-                  `${row.housekeeper_name} picks it up at ${formatTime(row.scheduled_start)}, done by ${formatTime(row.scheduled_end)}.`;
+            `${row.housekeeper_name} picks it up at ${formatTime(row.scheduled_start)}, done by ${formatTime(row.scheduled_end)}.`;
         } else if (row.status === 'READY') {
           reply = `Room ${rNum} is guest ready. ` +
-                  `Cleaned by ${row.housekeeper_name}, completed at ${formatTime(row.actual_end)}.`;
+            `Cleaned by ${row.housekeeper_name}, completed at ${formatTime(row.actual_end)}.`;
         } else if (row.status === 'OCCUPIED') {
           reply = `Room ${rNum} is occupied. Not in today's checkout list.`;
         }
@@ -330,9 +300,9 @@ End with a yes/no question so he can act immediately.
         const waiting = floorRooms.filter(r => r.status === 'DIRTY').map(r => r.room_number);
 
         reply = `Floor ${fNum} — ${floorRooms.length} rooms:\n` +
-                (ready.length > 0 ? `Ready: ${ready.join(', ')}\n` : '') +
-                (cleaning.length > 0 ? `Cleaning: ${cleaning.join(', ')}\n` : '') +
-                (waiting.length > 0 ? `Waiting: ${waiting.join(', ')}` : '');
+          (ready.length > 0 ? `Ready: ${ready.join(', ')}\n` : '') +
+          (cleaning.length > 0 ? `Cleaning: ${cleaning.join(', ')}\n` : '') +
+          (waiting.length > 0 ? `Waiting: ${waiting.join(', ')}` : '');
       }
 
       await dbOperations.addMessage("lancy", "Lancy", reply.trim());
@@ -351,11 +321,14 @@ End with a yes/no question so he can act immediately.
       if (hkTasks.length === 0) {
         reply = `${name} has no rooms assigned today.`;
       } else {
+        const pronounSubject = name === "James" ? "he" : "she";
+        const pronounPossessive = name === "James" ? "his" : "her";
+
         // Read status as single source of truth — never infer from time
-        const current  = hkTasks.find(r => r.status === 'CLEANING');
+        const current = hkTasks.find(r => r.status === 'CLEANING');
         const upcoming = hkTasks.filter(r => r.status === 'DIRTY')
-          .sort((a,b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime());
-        const past     = hkTasks.filter(r => r.status === 'READY');
+          .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime());
+        const past = hkTasks.filter(r => r.status === 'READY');
 
         if (current) {
           const eta = formatTime(current.scheduled_end);
@@ -363,9 +336,9 @@ End with a yes/no question so he can act immediately.
         } else if (upcoming.length > 0) {
           const next = upcoming[0];
           const start = formatTime(next.scheduled_start);
-          reply = `${name} has finished her current room.\nNext: Room ${next.room_number} at ${start}.`;
+          reply = `${name} has finished ${pronounPossessive} current room.\nNext: Room ${next.room_number} at ${start}.`;
         } else if (past.length > 0 && upcoming.length === 0) {
-          reply = `${name} has completed all her rooms for today.`;
+          reply = `${name} has completed all ${pronounPossessive} rooms for today.`;
         } else {
           reply = `${name} is ready and waiting. Assignments start at 10:00 AM.`;
         }
@@ -399,13 +372,13 @@ End with a yes/no question so he can act immediately.
       if (row) {
         if (row.status === 'CLEANING') {
           reply = `Room ${rNum} will be ready by ${formatTime(row.scheduled_end)}.\n` +
-                  `${row.housekeeper_name} has been cleaning since ${formatTime(row.actual_start)}.`;
+            `${row.housekeeper_name} has been cleaning since ${formatTime(row.actual_start)}.`;
         } else if (row.status === 'DIRTY') {
           reply = `Room ${rNum} will be ready by ${formatTime(row.scheduled_end)}.\n` +
-                  `${row.housekeeper_name} is scheduled to start at ${formatTime(row.scheduled_start)}.`;
+            `${row.housekeeper_name} is scheduled to start at ${formatTime(row.scheduled_start)}.`;
         } else if (row.status === 'READY') {
           reply = `Room ${rNum} is already guest ready.\n` +
-                  `Completed by ${row.housekeeper_name} at ${formatTime(row.actual_end)}.`;
+            `Completed by ${row.housekeeper_name} at ${formatTime(row.actual_end)}.`;
         } else if (row.status === 'OCCUPIED') {
           reply = `Room ${rNum} is occupied. Not in today's checkout list.`;
         }
@@ -432,7 +405,7 @@ End with a yes/no question so he can act immediately.
         if (current) {
           return `${paddedName} — Cleaning Room ${current.room_number}, done ${formatTime(current.scheduled_end)}`;
         } else if (waiting.length > 0) {
-          const next = waiting.sort((a,b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime())[0];
+          const next = waiting.sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime())[0];
           return `${paddedName} — Queue starting with Room ${next.room_number} at ${formatTime(next.scheduled_start)}`;
         } else {
           return `${paddedName} — Available (Queue complete)`;
@@ -462,7 +435,7 @@ End with a yes/no question so he can act immediately.
           const end = new Date(r.scheduled_end);
           const overdueMins = Math.floor((simDateTime.getTime() - end.getTime()) / 60000);
           return `Room ${r.room_number} is running late. ${r.housekeeper_name} was due at ${formatTime(r.scheduled_end)}. ` +
-                 `Now ${overdueMins} mins overdue. Want me to flag it?`;
+            `Now ${overdueMins} mins overdue. Want me to flag it?`;
         });
         reply = lines.join('\n');
       }
@@ -478,13 +451,13 @@ End with a yes/no question so he can act immediately.
       const cleaning = assignments.filter(r => r.status === 'CLEANING');
       const waiting = assignments.filter(r => r.status === 'DIRTY');
 
-      const maxEnd = assignments.length > 0 
+      const maxEnd = assignments.length > 0
         ? new Date(Math.max(...assignments.map(r => new Date(r.scheduled_end).getTime())))
         : new Date();
 
       const reply = `Progress at ${simTime}:\n` +
-                    `${ready.length} rooms ready, ${cleaning.length} being cleaned, ${waiting.length} still waiting.\n` +
-                    `On track to finish by ${formatTime(maxEnd)}.`;
+        `${ready.length} rooms ready, ${cleaning.length} being cleaned, ${waiting.length} still waiting.\n` +
+        `On track to finish by ${formatTime(maxEnd)}.`;
 
       await dbOperations.addMessage("lancy", "Lancy", reply);
       return { reply, buttons: [] };
@@ -497,13 +470,13 @@ End with a yes/no question so he can act immediately.
     if (genAI) {
       try {
         let systemPrompt = await dbOperations.buildLiveSystemPrompt(simTime);
-        
+
         // Append strict Gemini constraint
         systemPrompt += "\n\nCRITICAL HALLUCINATION SAFETY RULE:\n" +
-                        "If the user's question requires information or live data that is NOT present in the system prompt above, " +
-                        "you MUST reply exactly with:\n" +
-                        "\"I do not have that information right now.\"\n" +
-                        "Do NOT fabricate, guess, or reference any external knowledge. Stay completely grounded in the database context.";
+          "If the user's question requires information or live data that is NOT present in the system prompt above, " +
+          "you MUST reply exactly with:\n" +
+          "\"I do not have that information right now.\"\n" +
+          "Do NOT fabricate, guess, or reference any external knowledge. Stay completely grounded in the database context.";
 
         const model = genAI.getGenerativeModel({
           model: "gemini-1.5-flash",
