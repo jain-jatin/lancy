@@ -8,10 +8,10 @@ export function RoomChip({ room, onClick }: { room: Room & { damageReported?: bo
       className={`aspect-square w-full rounded-[10px] bg-white border ${statusBorder[room.status]} flex flex-col items-center justify-between py-2 px-1 active:scale-[0.97] transition-all duration-150 relative shadow-sm`}
     >
       <div className="w-full flex items-center justify-between px-1 shrink-0">
-        <span className="text-[7.5px] font-extrabold text-muted-foreground/80 tracking-wider uppercase leading-none">{room.type}</span>
+        <span className="text-[7px] font-extrabold text-muted-foreground/80 tracking-wider uppercase leading-none">{room.type}</span>
       </div>
 
-      <span className="text-[15px] font-extrabold text-[#1A1A2E] leading-none my-0.5">{room.number}</span>
+      <span className="text-[13px] font-extrabold text-[#1A1A2E] leading-none my-0.5">{room.number}</span>
 
       <div className="w-full flex items-center justify-between px-1 shrink-0 leading-none">
         <div className="flex gap-0.5 items-center">
