@@ -54,7 +54,7 @@ export function RoomsView({ onSelectRoom, roomsList }: { onSelectRoom: (r: Room)
         {Object.keys(byFloor).sort().map((floor) => (
           <div key={floor}>
             <div className="text-[9.5px] font-extrabold text-muted-foreground uppercase tracking-wider mb-1.5 pl-0.5">Floor {floor}</div>
-            <div className="grid grid-cols-5 gap-1">
+            <div className="grid grid-cols-5 gap-2.5">
               {byFloor[Number(floor)].map((r) => (
                 <RoomChip key={r.number} room={r} onClick={() => onSelectRoom(r)} />
               ))}
