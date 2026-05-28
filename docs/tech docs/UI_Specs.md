@@ -11,9 +11,9 @@ Lancy is designed with a premium, sleek, mobile-first design language matching m
 ### Color Palette & Design Tokens
 *   **Base Backdrop**: `#EFEDE8` (A warm sand/linen texture that makes the central device envelope pop).
 *   **Device Envelope**: `bg-background` (Pure white `#FFFFFF` / Slate grey base).
-*   **Primary Green (Emerald)**: `#059669` (Emerald 600) / Active `#047857` (Emerald 700) — used for primary action buttons, Lancy’s interactive options, and success badges.
-*   **Warning Amber**: `#F59E0B` (Amber 500) — used for pending supervisor reviews.
-*   **Urgent Red**: `#DC2626` (Red 600) — used for safety alerts and plumbing/room blockage cards.
+*   **Primary Accent (Teal)**: `#2A9D8F` — used for primary action buttons, Lancy’s interactive options, active filter capsules, and success badges.
+*   **Warning Amber**: `#D97706` — used for cleaning operations and pending supervisor reviews.
+*   **Urgent Red**: `#F87171` — used for safety alerts and plumbing/room blockage cards.
 *   **Text colors**:
     *   Dark Navy: `#1A1A2E` (For prominent titles and names).
     *   Muted Slate: `#475569` (For secondary metadata and instructions).
@@ -100,9 +100,8 @@ Embedded inside Lancy's feed dynamically:
 In the **Rooms** view, rooms are represented as standard metric grid items:
 *   **Grid layout**: 2-column or 3-column auto-wrapping layout.
 *   **Status Badging System**:
-    *   **Occupied**: Soft blue tag (`bg-[#DBEAFE] text-[#1E40AF]`) - indicates guest is currently in room.
-    *   **Dirty**: Soft red tag (`bg-[#FEE2E2] text-[#991B1B]`) - indicates checkout or early checkin awaiting turn.
-    *   **Cleaning**: Soft indigo tag (`bg-[#E0E7FF] text-[#3730A3]`) - housekeeper actively inside.
-    *   **Inspection / Review Pending**: Soft purple tag (`bg-[#EDE9FE] text-[#5B21B6]`) - awaiting supervisor review.
-    *   **Ready**: Soft green tag (`bg-[#D1FAE5] text-[#065F46]`) - clean and clear.
+    *   **Occupied**: Soft blue tag (`bg-[#DBEAFE] text-[#1E40AF]`) - guest is currently in room.
+    *   **Dirty**: Soft red tag (`bg-[#FEE2E2] text-[#991B1B]`) - checkout awaiting turn.
+    *   **Cleaning**: Soft amber tag (`bg-[#FEF3C7] text-[#92400E]`) - housekeeper actively cleaning inside.
+    *   **Ready**: Soft teal tag (`bg-[#E8F5F3] text-[#1A6B61]`) - clean and clear ready for check-in.
     *   **Blocked**: Crimson red tag (`bg-[#FEE2E2] text-[#7F1D1D]`) - locked due to plumbing or other damage.

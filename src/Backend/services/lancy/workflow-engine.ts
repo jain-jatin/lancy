@@ -1,5 +1,6 @@
 import { Room, Housekeeper } from "@/simulation/data";
 import { dbOperations } from "./db-operations";
+import { supabase, isRealSupabaseConfigured } from "../../db/supabase";
 
 export const workflowEngine = {
   async assignHousekeeperRoom(hkName: string, roomNum: string) {
@@ -29,10 +30,27 @@ export const workflowEngine = {
   },
 
   async confirmAssignments(plan: Record<string, string[]>) {
+    // Purge any accidental 501 / 504 assignments from database
+    if (isRealSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('room_assignments')
+          .delete()
+          .in('room_number', ['501', '504']);
+      } catch (err) {
+        console.warn("Failed to purge 501/504 room_assignments:", err);
+      }
+    }
+
     // Overwrite the rooms assigned to each housekeeper
     const allRooms = await dbOperations.getRooms();
+    const today = new Date().toISOString().split('T')[0];
+
+    const hkPromises: Promise<any>[] = [];
+    const roomPromises: Promise<any>[] = [];
+
     for (const [hkName, roomsList] of Object.entries(plan)) {
-      await dbOperations.updateHousekeeper(hkName, { rooms: roomsList });
+      hkPromises.push(dbOperations.updateHousekeeper(hkName, { rooms: roomsList }));
       
       let currentMins = 600; // 10:00 AM
       for (const rNum of roomsList) {
@@ -43,21 +61,76 @@ export const workflowEngine = {
         const start = currentMins;
         const end = currentMins + duration;
 
-        const startStr = `${Math.floor(start / 60).toString().padStart(2, "0")}:${(start % 60).toString().padStart(2, "0")}`;
-        const endStr = `${Math.floor(end / 60).toString().padStart(2, "0")}:${(end % 60).toString().padStart(2, "0")}`;
+        const startStr = `${Math.floor(start / 60).toString().padStart(2, "0")}:${(start % 60).toString().padStart(2, "0")}:00`;
+        const endStr = `${Math.floor(end / 60).toString().padStart(2, "0")}:${(end % 60).toString().padStart(2, "0")}:00`;
 
-        await dbOperations.updateRoomStatus(rNum, "dirty", {
-          attendant: hkName,
-          scheduled_start_time: startStr,
-          scheduled_end_time: endStr,
-          actual_start_time: null,
-          actual_end_time: null,
-          cleaned_by_name: null,
-        });
+        const scheduled_start = new Date(`${today}T${startStr}`).toISOString();
+        const scheduled_end = new Date(`${today}T${endStr}`).toISOString();
+
+        roomPromises.push((async () => {
+          await dbOperations.updateRoomStatus(rNum, "dirty", {
+            attendant: hkName,
+            scheduled_start_time: scheduled_start,
+            scheduled_end_time: scheduled_end,
+            actual_start_time: null,
+            actual_end_time: null,
+            cleaned_by_name: null,
+          });
+
+          // Write to Supabase room_assignments table directly if real Supabase is configured
+          if (isRealSupabaseConfigured && supabase) {
+            const rTypeLabel = rType === "STE" ? "Suite" : rType === "DLX" ? "Deluxe" : "Standard";
+            const rFloor = roomObj ? roomObj.floor : parseInt(rNum.charAt(0), 10);
+            const queuePos = roomsList.indexOf(rNum) + 1;
+
+            try {
+              const { data: existing } = await supabase
+                .from('room_assignments')
+                .select('id')
+                .eq('room_number', rNum)
+                .eq('shift_date', today)
+                .limit(1);
+
+              if (existing && existing.length > 0) {
+                await supabase
+                  .from('room_assignments')
+                  .update({
+                    housekeeper_name: hkName,
+                    room_type: rTypeLabel,
+                    floor: rFloor,
+                    queue_position: queuePos,
+                    scheduled_start,
+                    scheduled_end,
+                    status: 'DIRTY'
+                  })
+                  .eq('id', existing[0].id);
+              } else {
+                await supabase
+                  .from('room_assignments')
+                  .insert({
+                    room_number: rNum,
+                    housekeeper_name: hkName,
+                    room_type: rTypeLabel,
+                    floor: rFloor,
+                    queue_position: queuePos,
+                    shift_date: today,
+                    scheduled_start,
+                    scheduled_end,
+                    status: 'DIRTY'
+                  });
+              }
+            } catch (err) {
+              console.warn("Writing to room_assignments failed:", err);
+            }
+          }
+        })());
 
         currentMins = end;
       }
     }
+
+    await Promise.all(hkPromises);
+    await Promise.all(roomPromises);
   },
 
   async generateHousekeeperGreeting(hk: Housekeeper, rooms: Room[], simTime: string): Promise<string> {

@@ -60,7 +60,7 @@ At shift start, exactly 3 rooms check out early: **Room 201, Room 204, and Room 
 *   **Room States**:
     *   Rooms `201`, `204`, and `302` instantly trigger a `DIRTY` status.
     *   All other stayover/checkout rooms remain occupied/clean-empty.
-*   **Lancy Dialog**: Triggers greeting and asks Marcus if he'd like to see the check-in/checkout summary card.
+*   **Lancy Dialog**: Triggers morning greeting ("Good morning Marcus. Here is today at Maplewood Suites. 15 rooms checking out at 10:00 AM. 17 guests arriving by 1:00 PM. 5 housekeepers ready. Shall I generate the room cleaning assignments?") and offers suggested button `[Yes, assign rooms]`.
 
 ### ⏰ State B: 10:00 AM — First Reviews Pending & Queue Rushes
 By 10:00 AM, all remaining checkout guests have left. Rooms trigger `DIRTY` and housekeepers are actively working.

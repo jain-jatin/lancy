@@ -4,10 +4,10 @@ import { RoomChip } from "./RoomChip";
 import type { Room } from "@/simulation/data";
 
 const statusFilters = [
-  { value: "all", label: "All", color: "bg-emerald-600 border-emerald-600 text-white" },
+  { value: "all", label: "All", color: "bg-[#2A9D8F] border-[#2A9D8F] text-white" },
   { value: "dirty", label: "Dirty", color: "bg-[#F87171] border-[#F87171] text-white" },
-  { value: "cleaning", label: "Cleaning", color: "bg-[#818CF8] border-[#818CF8] text-white" },
-  { value: "ready", label: "Ready", color: "bg-[#34D399] border-[#34D399] text-white" },
+  { value: "cleaning", label: "Cleaning", color: "bg-[#D97706] border-[#D97706] text-white" },
+  { value: "ready", label: "Ready", color: "bg-[#2A9D8F] border-[#2A9D8F] text-white" },
   { value: "occupied", label: "Occupied", color: "bg-[#60A5FA] border-[#60A5FA] text-white" },
 ];
 
@@ -76,11 +76,11 @@ export function RoomsView({ onSelectRoom, roomsList }: { onSelectRoom: (r: Room)
             <span className="text-[10.5px] font-bold text-foreground/85">Dirty</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-[#818CF8]" />
+            <span className="h-2 w-2 rounded-full bg-[#D97706]" />
             <span className="text-[10.5px] font-bold text-foreground/85">Cleaning</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-[#34D399]" />
+            <span className="h-2 w-2 rounded-full bg-[#2A9D8F]" />
             <span className="text-[10.5px] font-bold text-foreground/85">Ready</span>
           </div>
           <div className="flex items-center gap-1">

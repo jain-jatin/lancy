@@ -41,8 +41,8 @@ export function getHkColor(name: string): string {
 
 export function compileSimulation(simTime: string, customRooms?: Room[], customHks?: Housekeeper[]): SimState {
   const T_mins = timeToMinutes(simTime);
-  const roomsList = customRooms || initialRooms;
-  const hksList = customHks || initialHousekeepers;
+  const roomsList = (customRooms && customRooms.length > 0) ? customRooms : initialRooms;
+  const hksList = (customHks && customHks.length > 0) ? customHks : initialHousekeepers;
 
   const roomsState: Record<string, Room> = {};
   roomsList.forEach((r) => {

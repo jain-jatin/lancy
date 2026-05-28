@@ -22,7 +22,7 @@ The core nerve center of the application, simulating a conversational interface 
 
 ### What CAN Be Done
 *   **Run Shift Greeting & Initial Summary**: Start the morning shift, triggering a summary block of today's check-ins and check-outs matching the master inventory.
-*   **Step-by-Step Assignment Workflows**: Click intuitive suggested options (such as `Yes, please` and `Go to Room turnarounds`) to progress dynamically.
+*   **Step-by-Step Assignment Workflows**: Click intuitive suggested option pills (such as `[Yes, assign rooms]` for instant morning distribution, and housekeeper nudges `[Ana]`, `[Rosa]`, `[James]`, `[Priya]`, `[Sofia]` to inspect, reorder, or reassign tasks step-by-step) to progress dynamically.
 *   **Interactive Attendant Reassignments**: Query Lancy about housekeeper availability (e.g., *"who is in?"*, *"who is here?"*) to receive an instant, temporally-aware headcount. Reassign high-priority rooms (like Room 412) to housekeepers via tap options.
 *   **Receive Real-Time Incidents**: View dynamic scenario notifications injected into the feed depending on the simulation time (e.g., Guest damage in Room 204, TV issue in Room 303, major water leak in Room 402).
 *   **Direct Incident Response**: React directly to incident cards (e.g., select whether to block Room 402 and redirect Priya to Room 405, or pause Room 303 cleaning).

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Lock, Zap, Clock, CheckCircle2, AlertTriangle } from "lucide-react";
-import { Room, Housekeeper } from "@/simulation/data";
+import { Room, Housekeeper, CHECKOUT_ROOMS } from "@/simulation/data";
 import { timeToMinutes, minutesToTime, getHkColor } from "@/simulation/engine";
 import { lancyService } from "@/Backend/services/lancy-service";
 import { toast } from "sonner";
@@ -49,10 +49,11 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
     if (!targetHk) return;
 
     // Remove from original housekeeper queue
+    let nextRooms: string[] = [];
     if (sourceHkName) {
       const sourceHk = housekeepers.find((h) => h.name === sourceHkName);
       if (sourceHk) {
-        const nextRooms = (sourceHk.rooms || []).filter((num) => num !== rNum);
+        nextRooms = (sourceHk.rooms || []).filter((num) => num !== rNum);
         await lancyService.updateHousekeeper(sourceHkName, { rooms: nextRooms });
       }
     }
@@ -83,6 +84,26 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
     // Update target housekeeper rooms
     await lancyService.updateHousekeeper(targetHkName, { rooms: updatedRooms });
 
+    // Recalculate timings for source housekeeper's remaining queue
+    if (sourceHkName) {
+      let currentMins = 600; // 10:00 AM start
+      for (const num of nextRooms) {
+        const rm = roomsList.find((r) => r.number === num);
+        const rType = rm ? rm.type : "STD";
+        const duration = rType === "STE" ? 45 : rType === "DLX" ? 35 : 25;
+        const start = currentMins;
+        const end = currentMins + duration;
+
+        await lancyService.updateRoomStatus(num, "dirty", {
+          attendant: sourceHkName,
+          scheduled_start_time: minutesToTime(start),
+          scheduled_end_time: minutesToTime(end),
+        });
+
+        currentMins = end;
+      }
+    }
+
     // Calculate new timings for target housekeeper's entire queue
     let currentMins = 600; // 10:00 AM start
     for (const num of updatedRooms) {
@@ -109,7 +130,7 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
   };
 
   // Compile tasks
-  const checkoutRooms = roomsList.filter((r) => r.attendant && (r.status === "dirty" || r.status === "cleaning" || r.status === "ready"));
+  const checkoutRooms = roomsList.filter((r) => r.attendant && CHECKOUT_ROOMS.includes(r.number));
 
   const filteredTasks = checkoutRooms.filter((t) => {
     return t.attendant === selectedHk;
@@ -121,7 +142,7 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
 
   // Sort upcoming tasks by priority: Suite -> Deluxe -> Standard, then by start time
   const upcomingTasks = filteredTasks
-    .filter((t) => t.status === "dirty")
+    .filter((t) => t.status === "dirty" || t.status === "occupied")
     .sort((a, b) => {
       const order: Record<string, number> = { STE: 0, DLX: 1, STD: 2 };
       const diff = order[a.type] - order[b.type];
@@ -137,29 +158,32 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
   return (
     <div className="flex-1 overflow-y-auto bg-[#EFEDE8] flex flex-col">
       {/* Header Selector */}
-      <div className="px-4 py-3 bg-white border-b border-border shadow-sm shrink-0 sticky top-0 z-20 flex flex-col gap-1.5">
-        <label className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest pl-0.5">Select Housekeeper</label>
-        <div className="relative">
-          <select
-            value={selectedHk}
-            onChange={(e) => setSelectedHk(e.target.value)}
-            className="w-full h-11 px-3.5 rounded-xl border border-[#E8E5DF] bg-[#F8F7F4] text-[13px] font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
-          >
-            {housekeepers.map((h) => (
-              <option key={h.name} value={h.name}>{h.name}</option>
-            ))}
-          </select>
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground font-bold">▼</div>
-        </div>
+      <div className="px-4 py-2.5 bg-white border-b border-border shadow-sm shrink-0 sticky top-0 z-20 flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar scroll-smooth">
+        {housekeepers.map((h) => {
+          const isSelected = selectedHk === h.name;
+          return (
+            <button
+              key={h.name}
+              onClick={() => setSelectedHk(h.name)}
+              className={`px-3.5 py-1.5 rounded-full text-[12px] font-bold border transition-all active:scale-[0.96] whitespace-nowrap shrink-0 ${
+                isSelected
+                  ? "bg-[#E8F5E9] border-[#C8E6C9] text-[#2E7D32]"
+                  : "bg-[#F3F2EF] border-[#E8E5DF] text-muted-foreground hover:bg-[#E8E5DF]"
+              }`}
+            >
+              {h.name}
+            </button>
+          );
+        })}
       </div>
 
       <div className="px-4 pt-4 pb-24 space-y-6 flex-1 overflow-y-auto">
         {/* CURRENT SECTOR */}
         {countCurrent > 0 && (
           <div className="space-y-2.5">
-            <div className="flex items-center gap-2 px-1">
-              <span className="text-[11px] font-extrabold text-[#3730A3] uppercase tracking-wider">Current</span>
-              <span className="bg-[#E0E7FF] text-[#3730A3] text-[10px] font-extrabold px-2 py-0.5 rounded-full">{countCurrent}</span>
+            <div className="flex items-center gap-2 px-1 mb-1.5">
+              <span className="text-[9.5px] font-extrabold text-[#3730A3] uppercase tracking-widest leading-none">Current</span>
+              <span className="bg-[#E0E7FF] text-[#3730A3] text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-full leading-none">{countCurrent}</span>
             </div>
             <div className="space-y-2.5">
               {currentTasks.map((t) => {
@@ -212,9 +236,9 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
         {/* UPCOMING SECTOR */}
         {countUpcoming > 0 && (
           <div className="space-y-2.5">
-            <div className="flex items-center gap-2 px-1">
-              <span className="text-[11px] font-extrabold text-[#991B1B] uppercase tracking-wider">Upcoming</span>
-              <span className="bg-[#FEE2E2] text-[#991B1B] text-[10px] font-extrabold px-2 py-0.5 rounded-full">{countUpcoming}</span>
+            <div className="flex items-center gap-2 px-1 mb-1.5">
+              <span className="text-[9.5px] font-extrabold text-[#991B1B] uppercase tracking-widest leading-none">Upcoming</span>
+              <span className="bg-[#FEE2E2] text-[#991B1B] text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-full leading-none">{countUpcoming}</span>
             </div>
             <div className="space-y-2.5">
               {upcomingTasks.map((t) => {
@@ -273,7 +297,7 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
                               setReassigningRoom(null);
                               setTempHk(null);
                             }}
-                            className="text-[10px] font-extrabold text-red-500 hover:text-red-700 uppercase tracking-wider"
+                            className="text-[10px] font-extrabold text-rose-400 hover:text-rose-500 uppercase tracking-wider"
                           >
                             Cancel
                           </button>
@@ -318,9 +342,9 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
         {/* PAST SECTOR */}
         {countPast > 0 && (
           <div className="space-y-2.5">
-            <div className="flex items-center gap-2 px-1">
-              <span className="text-[11px] font-extrabold text-[#065F46] uppercase tracking-wider">Past</span>
-              <span className="bg-[#D1FAE5] text-[#065F46] text-[10px] font-extrabold px-2 py-0.5 rounded-full">{countPast}</span>
+            <div className="flex items-center gap-2 px-1 mb-1.5">
+              <span className="text-[9.5px] font-extrabold text-[#065F46] uppercase tracking-widest leading-none">Past</span>
+              <span className="bg-[#D1FAE5] text-[#065F46] text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-full leading-none">{countPast}</span>
             </div>
             <div className="space-y-2.5 opacity-[0.75]">
               {pastTasks.map((t) => {
@@ -366,7 +390,7 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
 
         {checkoutRooms.length === 0 && (
           <div className="text-center py-20 text-muted-foreground text-[13px] font-medium bg-white rounded-2xl border border-[#E8E5DF] p-6">
-            No checkout tasks generated yet. Start the shift to view daily housekeeping tasks.
+            No tasks
           </div>
         )}
       </div>
