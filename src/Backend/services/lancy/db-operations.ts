@@ -459,8 +459,10 @@ Never list a CLEANING room as upcoming.
 Never list a DIRTY room as current.
 Never fabricate room data. Read only from above.
 Be concise. Under 3 sentences unless listing rooms.
-When you act on something (reassign, relay, ticket)
-confirm it clearly and state what you did.
+
+CRITICAL TOOL USAGE RULES:
+- If the user says anything like "assign room X to Y", "move room X to Y", "give room X to Y", "reassign room X to Y", "put room X with Y" — you MUST call the tool reassign_room_to_housekeeper with the room number and destination housekeeper name. Do NOT describe room status. ACT immediately.
+- When you act on something (reassign, relay, ticket) confirm it clearly and state what you did.
 English only.
 `;
   }

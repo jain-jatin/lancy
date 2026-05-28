@@ -77,17 +77,15 @@ export const LANCY_TOOLS: any[] = [
     }
   },
   {
-    name: "reassign_housekeeper",
-    description: "Move a housekeeper from their current room to a different one. Call this when a room is blocked and the housekeeper needs a new assignment.",
+    name: "reassign_room_to_housekeeper",
+    description: "Move a cleaning task (room) from one housekeeper's queue to another. Use whenever Marcus says 'assign room X to Y', 'move room X to Y', 'give room X to Y', 'reassign room X to Y', or any equivalent. Extract room_number from the 3-digit number in the message and dest_housekeeper_name from the target housekeeper's name.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        housekeeper_name: { type: SchemaType.STRING },
-        from_room: { type: SchemaType.STRING },
-        to_room: { type: SchemaType.STRING },
-        reason: { type: SchemaType.STRING }
+        room_number: { type: SchemaType.STRING, description: "3-digit room number to move, e.g. '201'" },
+        dest_housekeeper_name: { type: SchemaType.STRING, description: "Name of the housekeeper who should receive the room, e.g. 'Sofia'" }
       },
-      required: ["housekeeper_name", "from_room", "to_room"]
+      required: ["room_number", "dest_housekeeper_name"]
     }
   },
   {
@@ -233,27 +231,82 @@ export const executeTool = async (toolName: string, args: any): Promise<any> => 
       break;
     }
 
-    case 'reassign_housekeeper': {
-      if (isRealSupabaseConfigured) {
-        await supabase!
-          .from('housekeepers')
-          .update({ 
-            current_room: args.to_room, 
-            current_activity: 'INSPECTION' 
-          })
-          .eq('name', args.housekeeper_name);
+    case 'reassign_room_to_housekeeper': {
+      const roomNum: string = String(args.room_number);
+      const destName: string = args.dest_housekeeper_name;
+
+      const allHks = await dbOperations.getHousekeepers();
+      const allRooms = await dbOperations.getRooms();
+
+      // Find source housekeeper (current owner of this room)
+      const srcHk = allHks.find(h => (h.rooms || []).includes(roomNum));
+      if (!srcHk) {
+        return `I could not find Room ${roomNum} in any housekeeper's queue. Please check the room number.`;
       }
-      
-      await dbOperations.updateHousekeeper(args.housekeeper_name, {
-        current_room: args.to_room,
-        current_activity: 'INSPECTION'
-      });
-      
-      if (args.from_room) {
-        await dbOperations.updateRoomStatus(args.from_room, "dirty", { attendant: undefined });
+      if (srcHk.name === destName) {
+        return `Room ${roomNum} is already assigned to ${destName}.`;
       }
-      await dbOperations.updateRoomStatus(args.to_room, "dirty", { attendant: args.housekeeper_name });
-      break;
+
+      const destHk = allHks.find(h => h.name === destName);
+      if (!destHk) {
+        return `I could not find a housekeeper named ${destName}. Please check the name.`;
+      }
+
+      const getDur = (type: string) => type === 'STE' || type === 'Suite' ? 45 : type === 'DLX' || type === 'Deluxe' ? 35 : 25;
+      const toTime = (mins: number) => `${Math.floor(mins/60).toString().padStart(2,'0')}:${(mins%60).toString().padStart(2,'0')}`;
+      const typeOrder: Record<string,number> = { STE: 0, Suite: 0, DLX: 1, Deluxe: 1, STD: 2, Standard: 2 };
+
+      // 1. Remove from source queue and recalculate
+      const srcRooms = (srcHk.rooms || []).filter((n: string) => n !== roomNum);
+      await dbOperations.updateHousekeeper(srcHk.name, { rooms: srcRooms });
+      let srcMins = 600;
+      for (const num of srcRooms) {
+        const r = allRooms.find(rm => rm.number === num);
+        if (!r) continue;
+        const dur = getDur(r.type);
+        await dbOperations.updateRoomStatus(num, r.status, {
+          attendant: srcHk.name,
+          scheduled_start_time: toTime(srcMins),
+          scheduled_end_time: toTime(srcMins + dur),
+        });
+        srcMins += dur;
+      }
+
+      // 2. Insert into destination queue in priority order
+      const movedRoom = allRooms.find(r => r.number === roomNum);
+      const movingPriority = typeOrder[movedRoom?.type ?? 'Standard'] ?? 2;
+      const destRooms = [...(destHk.rooms || [])];
+      let insertAt = destRooms.length;
+      for (let i = 0; i < destRooms.length; i++) {
+        const r = allRooms.find(rm => rm.number === destRooms[i]);
+        if (!r) continue;
+        if ((typeOrder[r.type] ?? 2) > movingPriority) { insertAt = i; break; }
+      }
+      const newDestRooms = [...destRooms.slice(0, insertAt), roomNum, ...destRooms.slice(insertAt)];
+      await dbOperations.updateHousekeeper(destName, { rooms: newDestRooms });
+
+      // 3. Recalculate full dest queue timings from 10AM
+      let destMins = 600;
+      for (const num of newDestRooms) {
+        const r = allRooms.find(rm => rm.number === num);
+        if (!r) continue;
+        const dur = getDur(r.type);
+        await dbOperations.updateRoomStatus(num, r.status, {
+          attendant: destName,
+          scheduled_start_time: toTime(destMins),
+          scheduled_end_time: toTime(destMins + dur),
+        });
+        destMins += dur;
+      }
+
+      // 4. Build a readable updated queue string
+      const freshRooms = await dbOperations.getRooms();
+      const queueLines = newDestRooms.map((num, idx) => {
+        const r = freshRooms.find(rm => rm.number === num);
+        return `${idx + 1}. Room ${num} — ${r?.scheduled_start_time || ''} to ${r?.scheduled_end_time || ''}${num === roomNum ? '  ← moved here' : ''}`;
+      }).join('\n');
+
+      return `Done. Room ${roomNum} moved from ${srcHk.name} to ${destName}.\n\n${destName}'s updated queue:\n${queueLines}`;
     }
 
     case 'get_hotel_snapshot': {

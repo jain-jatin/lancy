@@ -1396,6 +1396,24 @@ function LancyApp() {
     return 1;
   };
 
+  // Returns the minute-anchor from which to schedule a housekeeper's upcoming queue:
+  // → Cleaning: must wait until that room's scheduled end
+  // → Idle (all done or not started): available NOW at simTime (floored to shift start 10AM)
+  const getHkQueueAnchorMins = (hkName: string, rooms: typeof dbRooms): number => {
+    const hkRooms = rooms.filter(r => r.attendant === hkName);
+
+    // If actively cleaning, they're committed — schedule after that room ends
+    const cleaningRoom = hkRooms.find(r => isStatusCleaning(r.status));
+    if (cleaningRoom?.scheduled_end_time) {
+      return timeToMinutes(cleaningRoom.scheduled_end_time);
+    }
+
+    // HK is idle — anchor from current simulation time (they're available now)
+    // Never before 10:00 AM shift start (600 mins)
+    const simTimeMins = timeToMinutes(selectedTime || '10:00');
+    return Math.max(600, simTimeMins);
+  };
+
   const reorderHousekeeperQueue = async (hkName: string, roomNum: string, newPos: number) => {
     const dbHks = await lancyService.getHousekeepers();
     const dbRooms = await lancyService.getRooms();
@@ -1403,31 +1421,47 @@ function LancyApp() {
     const hk = dbHks.find(h => h.name === hkName);
     if (!hk) return null;
 
-    const currentRooms = hk.rooms || [];
-    const remaining = currentRooms.filter(num => num !== roomNum);
-    const targetIdx = Math.max(0, Math.min(newPos - 1, remaining.length));
-    const newRooms = [...remaining];
-    newRooms.splice(targetIdx, 0, roomNum);
+    // Separate upcoming and past rooms
+    const allRoomNums = hk.rooms || [];
+    const upcomingNums = allRoomNums.filter(num => {
+      const r = dbRooms.find(rm => rm.number === num);
+      return r && isStatusUpcoming(r.status);
+    });
+    const pastNums = allRoomNums.filter(num => !upcomingNums.includes(num));
 
+    // Remove the target room from upcoming, insert at new position
+    const remaining = upcomingNums.filter(num => num !== roomNum);
+    const targetIdx = Math.max(0, Math.min(newPos - 1, remaining.length));
+    const newUpcoming = [...remaining];
+    newUpcoming.splice(targetIdx, 0, roomNum);
+
+    // Merge back: past rooms first, then reordered upcoming
+    const newRooms = [...pastNums, ...newUpcoming];
     await lancyService.updateHousekeeper(hkName, { rooms: newRooms });
 
-    let currentMins = 600;
+    // If the reordered room was previously 'ready' (past), reset it to 'dirty' so it shows as upcoming
+    const targetRoom = dbRooms.find(r => r.number === roomNum);
+    const wasCompleted = targetRoom && isStatusReady(targetRoom.status);
+
+    // Anchor: schedule upcoming rooms starting from end of current/last completed task
+    let currentMins = getHkQueueAnchorMins(hkName, dbRooms);
     const updatedRoomsList = [];
 
-    for (const num of newRooms) {
+    for (const num of newUpcoming) {
       const r = dbRooms.find(rm => rm.number === num);
       if (!r) continue;
       const duration = getDuration(r.type);
       const start = currentMins;
       const end = currentMins + duration;
 
-      const startStr = minutesToTime(start);
-      const endStr = minutesToTime(end);
+      const newStatus = (num === roomNum && wasCompleted) ? 'dirty' : r.status;
 
-      const updated = await lancyService.updateRoomStatus(num, r.status, {
+      const updated = await lancyService.updateRoomStatus(num, newStatus, {
         attendant: hkName,
-        scheduled_start_time: startStr,
-        scheduled_end_time: endStr,
+        scheduled_start_time: minutesToTime(start),
+        scheduled_end_time: minutesToTime(end),
+        // Clear actual times if resetting to dirty
+        ...(num === roomNum && wasCompleted ? { actual_start_time: null, actual_end_time: null, cleaned_by_name: null } : {}),
       });
       updatedRoomsList.push(updated);
       currentMins = end;
@@ -1447,123 +1481,63 @@ function LancyApp() {
     const remainingFromRooms = (fromHk.rooms || []).filter(num => num !== roomNum);
     await lancyService.updateHousekeeper(fromHkName, { rooms: remainingFromRooms });
 
-    let currentMins = 600;
+    // Recalculate source HK's UPCOMING queue only (skip past/ready rooms — they're done)
+    const srcAnchorMins = getHkQueueAnchorMins(fromHkName, dbRooms);
+    let currentMins = srcAnchorMins;
     for (const num of remainingFromRooms) {
       const r = dbRooms.find(rm => rm.number === num);
-      if (!r) continue;
+      if (!r || isStatusReady(r.status)) continue; // skip past rooms
       const duration = getDuration(r.type);
       const start = currentMins;
       const end = currentMins + duration;
-
       await lancyService.updateRoomStatus(num, r.status, {
         scheduled_start_time: minutesToTime(start),
         scheduled_end_time: minutesToTime(end),
       });
       currentMins = end;
-
-      // Find toHk anchor: end time of their last room
-      // If they have no rooms, start at 10:00 AM (600 mins)
-      const toHkCurrentRooms = toHk.rooms || []
-      let toHkAnchor = 600
-
-      if (toHkCurrentRooms.length > 0) {
-        for (const num of toHkCurrentRooms) {
-          const r = dbRooms.find(rm => rm.number === num)
-          if (!r) continue
-          const duration = getDuration(r.type)
-          toHkAnchor += duration
-        }
-      }
-
-      // Insert reassigned room at correct priority position
-      const typeOrder: Record<string, number> = {
-        Suite: 0, Deluxe: 1, Standard: 2
-      }
-      const movedRoom = dbRooms.find(rm => rm.number === roomNum)
-      const movingPriority = typeOrder[movedRoom?.type ?? 'Standard'] ?? 2
-
-      let insertAt = toHkCurrentRooms.length
-      for (let i = 0; i < toHkCurrentRooms.length; i++) {
-        const r = dbRooms.find(rm => rm.number === toHkCurrentRooms[i])
-        if (!r) continue
-        if ((typeOrder[r.type] ?? 2) > movingPriority) {
-          insertAt = i
-          break
-        }
-      }
-
-      const updatedToRooms = [
-        ...toHkCurrentRooms.slice(0, insertAt),
-        roomNum,
-        ...toHkCurrentRooms.slice(insertAt)
-      ]
-
-      await lancyService.updateHousekeeper(toHkName, { rooms: updatedToRooms })
-
-      // Recalculate toHk complete queue from anchor
-      // Must recalculate ALL rooms not just the new one
-      let toCurrentMins = 600
-
-      // First advance past any already-completed rooms
-      // by finding the true anchor from scheduled times
-      // For simplicity recalculate entire queue from 10 AM
-      for (const num of updatedToRooms) {
-        const r = dbRooms.find(rm => rm.number === num)
-        if (!r) continue
-        const duration = getDuration(r.type)
-        const start = toCurrentMins
-        const end = toCurrentMins + duration
-
-        await lancyService.updateRoomStatus(num, r.status, {
-          scheduled_start_time: minutesToTime(start),
-          scheduled_end_time: minutesToTime(end),
-        })
-        toCurrentMins = end
-      }
     }
 
-    const toRooms = toHk.rooms || [];
-    const targetRoomObj = dbRooms.find(r => r.number === roomNum);
-    if (!targetRoomObj) return null;
-    const targetType = targetRoomObj.type;
+    // Build dest HK's new room list: insert roomNum in priority order among upcoming rooms only
+    const typeOrder: Record<string, number> = { STE: 0, Suite: 0, DLX: 1, Deluxe: 1, STD: 2, Standard: 2 };
+    const movedRoom = dbRooms.find(rm => rm.number === roomNum);
+    const movingPriority = typeOrder[movedRoom?.type ?? 'Standard'] ?? 2;
 
-    const newToRooms = [];
-    let inserted = false;
-
-    for (const num of toRooms) {
+    const toAllRooms = toHk.rooms || [];
+    const toPastRooms = toAllRooms.filter(num => {
       const r = dbRooms.find(rm => rm.number === num);
-      if (!r) {
-        newToRooms.push(num);
-        continue;
-      }
+      return r && isStatusReady(r.status);
+    });
+    const toUpcomingRooms = toAllRooms.filter(num => {
+      const r = dbRooms.find(rm => rm.number === num);
+      return r && !isStatusReady(r.status);
+    });
 
-      if (!inserted) {
-        if (targetType === "STE" && r.type !== "STE") {
-          newToRooms.push(roomNum);
-          inserted = true;
-        } else if (targetType === "DLX" && r.type === "STD") {
-          newToRooms.push(roomNum);
-          inserted = true;
-        }
-      }
-      newToRooms.push(num);
+    // Insert into upcoming at priority position
+    let insertAt = toUpcomingRooms.length;
+    for (let i = 0; i < toUpcomingRooms.length; i++) {
+      const r = dbRooms.find(rm => rm.number === toUpcomingRooms[i]);
+      if (!r) continue;
+      if ((typeOrder[r.type] ?? 2) > movingPriority) { insertAt = i; break; }
     }
+    const newUpcoming = [
+      ...toUpcomingRooms.slice(0, insertAt),
+      roomNum,
+      ...toUpcomingRooms.slice(insertAt)
+    ];
 
-    if (!inserted) {
-      newToRooms.push(roomNum);
-    }
-
+    // Merge: past rooms first (order preserved), then reordered upcoming
+    const newToRooms = [...toPastRooms, ...newUpcoming];
     await lancyService.updateHousekeeper(toHkName, { rooms: newToRooms });
 
-    currentMins = 600;
+    // Recalculate dest HK's upcoming queue from current anchor (skip past rooms)
+    currentMins = getHkQueueAnchorMins(toHkName, dbRooms);
     const toHkUpdatedRooms = [];
-    for (const num of newToRooms) {
+    for (const num of newUpcoming) { // only upcoming — past rooms keep their existing times
       const r = dbRooms.find(rm => rm.number === num);
       if (!r) continue;
       const duration = getDuration(r.type);
       const start = currentMins;
       const end = currentMins + duration;
-
       const updated = await lancyService.updateRoomStatus(num, r.status, {
         attendant: toHkName,
         scheduled_start_time: minutesToTime(start),
@@ -1575,6 +1549,7 @@ function LancyApp() {
 
     return { fromHkName, toHkName, toHkRooms: toHkUpdatedRooms };
   };
+
 
   const onSend = async (text: string) => {
     console.log("[index.tsx] onSend triggered with text:", text);
@@ -1615,6 +1590,94 @@ function LancyApp() {
       return;
     }
 
+    // Standalone reorder with no HK context — try to resolve HK from room number, otherwise start guided flow
+    const isReorderIntent = clean.includes("reorder") || clean.includes("rework") ||
+      (clean.includes("order") && (clean.includes("task") || clean.includes("clean")));
+    if (flow.step === 'IDLE' && (isReorderIntent || clean === "assign to someone else")) {
+      const roomInMsg = clean.match(/\b\d{3}\b/);
+      const hkNames = dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"];
+
+      if (roomInMsg && isReorderIntent) {
+        // Room number is given — resolve the HK automatically from the DB
+        const roomNum = roomInMsg[0];
+        const dbRooms = await lancyService.getRooms();
+        const rm = dbRooms.find(r => r.number === roomNum);
+        const attendantName = rm?.attendant || rm?.cleaned_by_name;
+
+        if (attendantName && hkNames.includes(attendantName)) {
+          const hkUpcoming = sortHkRooms(dbRooms.filter(r => r.attendant === attendantName && isStatusUpcoming(r.status)));
+          const hasPastTasks = dbRooms.some(r => r.attendant === attendantName && isStatusReady(r.status));
+
+          if (!hasPastTasks) {
+            pushMsg(
+              <LancyBubble>
+                Reordering is only available once {attendantName} has started cleaning and completed at least one room.
+              </LancyBubble>
+            );
+            setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+            return;
+          }
+
+          // We know HK + room — jump straight to asking the position (or auto-place if only 1 slot)
+          const slotsWithout = hkUpcoming.filter(r => r.number !== roomNum);
+          const maxPos = slotsWithout.length + 1;
+
+          if (maxPos === 1) {
+            // Only one possible position — auto-place without asking
+            await reorderHousekeeperQueue(attendantName, roomNum, 1);
+            const freshRooms = await lancyService.getRooms();
+            const dbHksRefresh = await lancyService.getHousekeepers();
+            setDbHksList(dbHksRefresh);
+            setSimState(compileSimulation(selectedTime, freshRooms, dbHksRefresh));
+            const freshUpcoming = sortHkRooms(freshRooms.filter(r => r.attendant === attendantName && isStatusUpcoming(r.status)));
+            const listStr = freshUpcoming.map((r, i) => `${i + 1}. Room ${r.number} — ${r.scheduled_start_time} to ${r.scheduled_end_time}`).join('\n');
+            setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+            pushMsgWithNudges(
+              <>
+                Done. Room {roomNum} added to {attendantName}'s queue — it's the only upcoming task.
+                <br /><br />Updated schedule:<br />
+                {listStr.split('\n').map((line, i) => <span key={i}>{line}<br /></span>)}
+              </>,
+              ["See another housekeeper", "Done"]
+            );
+            return;
+          }
+
+          setFlow({ step: 'AWAITING_REORDER_POSITION', selectedHK: attendantName, selectedRoom: roomNum, action: 'reorder' });
+          pushMsg(
+            <LancyBubble>
+              Got it — Room {roomNum} is in {attendantName}'s queue.
+              <br /><br />
+              Where would you like Room {roomNum} in {attendantName}'s queue? (1 to {maxPos})
+              <br />
+              Type a position like 'first', 'second', 'last' — or just the number.
+            </LancyBubble>
+          );
+          return;
+        }
+
+        // HK not resolved — store the room number in flow so it's not lost when HK is picked later
+        setFlow({ step: 'AWAITING_HK_SELECT', selectedHK: null, selectedRoom: roomNum, action: 'reorder' });
+        pushMsgWithNudges(
+          <>
+            Room {roomNum} noted. Which housekeeper should handle this?
+          </>,
+          hkNames
+        );
+        return;
+      }
+
+      // No room number in message — generic HK-pick flow
+      setFlow({ step: 'AWAITING_HK_SELECT', selectedHK: null, selectedRoom: null, action: isReorderIntent ? 'reorder' : 'reassign' });
+      pushMsgWithNudges(
+        <>
+          Sure! Which housekeeper's queue would you like to work with?
+        </>,
+        hkNames
+      );
+      return;
+    }
+
     // DIRECT NLP COMMANDS (bypass the guided flow at any time)
 
     // NLP 1: SHOW TASKS
@@ -1628,6 +1691,8 @@ function LancyApp() {
       if (validNames.includes(name)) {
         const dbRooms = await lancyService.getRooms();
         const hkRooms = sortHkRooms(dbRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
+        // Only offer Reorder if the shift has started for this HK (has at least one past/completed room)
+        const hasPastTasks = dbRooms.some(r => r.attendant === name && isStatusReady(r.status));
 
         let contentText = "";
         if (hkRooms.length === 0) {
@@ -1637,10 +1702,14 @@ function LancyApp() {
           contentText = `${name}: ${roomList}`;
         }
 
+        const actionNudges = hasPastTasks
+          ? ["Reorder a task", "Assign to someone else"]
+          : ["Assign to someone else"];
+
         setFlow({ step: 'AWAITING_ACTION', selectedHK: name, selectedRoom: null, action: null });
         pushMsgWithNudges(
           <div className="whitespace-pre-wrap">{contentText}</div>,
-          ["Reorder a task", "Assign to someone else"]
+          actionNudges
         );
         return;
       }
@@ -1839,6 +1908,7 @@ function LancyApp() {
       if (validNames.includes(name)) {
         const dbRooms = await lancyService.getRooms();
         const hkRooms = sortHkRooms(dbRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
+        const hasPastTasks = dbRooms.some(r => r.attendant === name && isStatusReady(r.status));
 
         let contentText = "";
         if (hkRooms.length === 0) {
@@ -1848,15 +1918,128 @@ function LancyApp() {
           contentText = `${name}: ${roomList}`;
         }
 
+        // If the user started a reorder flow AND we already know the room, skip straight to position
+        if (flow.action === 'reorder' && flow.selectedRoom) {
+          if (!hasPastTasks) {
+            pushMsg(
+              <LancyBubble>
+                Reordering is only available once {name} has started cleaning and completed at least one room.
+                <br />All of {name}'s rooms are still upcoming.
+              </LancyBubble>
+            );
+            setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+            return;
+          }
+          const roomNum = flow.selectedRoom;
+          const slotsWithout = hkRooms.filter(r => r.number !== roomNum);
+          const maxPos = slotsWithout.length + 1;
+
+          if (maxPos === 1) {
+            await reorderHousekeeperQueue(name, roomNum, 1);
+            const freshRooms = await lancyService.getRooms();
+            const dbHksRefresh = await lancyService.getHousekeepers();
+            setDbHksList(dbHksRefresh);
+            setSimState(compileSimulation(selectedTime, freshRooms, dbHksRefresh));
+            const freshUpcoming = sortHkRooms(freshRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
+            const listStr = freshUpcoming.map((r, i) => `${i + 1}. Room ${r.number} — ${r.scheduled_start_time} to ${r.scheduled_end_time}`).join('\n');
+            setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+            pushMsgWithNudges(
+              <>
+                Done. Room {roomNum} added to {name}'s queue — it's the only upcoming task.
+                <br /><br />Updated schedule:<br />
+                {listStr.split('\n').map((line, i) => <span key={i}>{line}<br /></span>)}
+              </>,
+              ["See another housekeeper", "Done"]
+            );
+            return;
+          }
+
+          setFlow({ step: 'AWAITING_REORDER_POSITION', selectedHK: name, selectedRoom: roomNum, action: 'reorder' });
+          pushMsg(
+            <LancyBubble>
+              Got it — reordering Room {roomNum} in {name}'s queue.
+              <br /><br />
+              Where would you like it? (1 to {maxPos})
+              <br />
+              Type 'first', 'second', 'last' — or just the number.
+            </LancyBubble>
+          );
+          return;
+        }
+
+        // If the user started a reorder flow but no room chosen yet, ask which room
+        if (flow.action === 'reorder') {
+          if (!hasPastTasks) {
+            pushMsg(
+              <LancyBubble>
+                Reordering is only available once {name} has started cleaning and completed at least one room.
+                <br />All of {name}'s rooms are still upcoming.
+              </LancyBubble>
+            );
+            setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+            return;
+          }
+          const roomNudges = hkRooms.map(r => `Room ${r.number}`);
+          setFlow({ step: 'AWAITING_REORDER_ROOM', selectedHK: name, selectedRoom: null, action: 'reorder' });
+          pushMsgWithNudges(
+            <>
+              {contentText}
+              <br /><br />Which room do you want to reorder in {name}'s queue?
+            </>,
+            roomNudges
+          );
+          return;
+        }
+
+        const actionNudges = hasPastTasks
+          ? ["Reorder a task", "Assign to someone else"]
+          : ["Assign to someone else"];
+
         setFlow({ step: 'AWAITING_ACTION', selectedHK: name, selectedRoom: null, action: null });
         pushMsgWithNudges(
           <div className="whitespace-pre-wrap">{contentText}</div>,
-          ["Reorder a task", "Assign to someone else"]
+          actionNudges
         );
         return;
       } else {
-        // Unrelated input: Reset to IDLE
-        setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+        // Not a valid HK name — try to extract a room number or resolve HK from context before re-prompting
+        const hkNames = dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"];
+        const roomInMsg = clean.match(/\b\d{3}\b/);
+
+        if (roomInMsg) {
+          const roomNum = roomInMsg[0];
+          const dbRooms = await lancyService.getRooms();
+          const rm = dbRooms.find(r => r.number === roomNum);
+          const attendantName = rm?.attendant || rm?.cleaned_by_name;
+
+          if (attendantName && hkNames.includes(attendantName)) {
+            // Auto-resolved from room number — advance the flow
+            setFlow({ ...flow, step: 'AWAITING_HK_SELECT', selectedRoom: roomNum });
+            // Synthesize as if the HK name was typed — re-trigger with the resolved name
+            await onSend(attendantName);
+            return;
+          }
+
+          // Room found but HK not resolved — save the room in context
+          setFlow({ ...flow, selectedRoom: roomNum });
+          pushMsgWithNudges(
+            <LancyBubble>
+              Room {roomNum} noted. Which housekeeper should handle this?
+            </LancyBubble>,
+            hkNames
+          );
+          return;
+        }
+
+        // No room number either — just re-prompt
+        pushMsgWithNudges(
+          <LancyBubble>
+            I need a housekeeper name. Which one would you like?
+          </LancyBubble>,
+          hkNames
+        );
+        // Keep flow.step and flow.action unchanged
+        return;
       }
     }
 
@@ -1866,6 +2049,18 @@ function LancyApp() {
         const name = flow.selectedHK!;
         const dbRooms = await lancyService.getRooms();
         const hkRooms = sortHkRooms(dbRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
+        const hasPastTasks = dbRooms.some(r => r.attendant === name && isStatusReady(r.status));
+
+        if (!hasPastTasks) {
+          pushMsg(
+            <LancyBubble>
+              Reordering is only available once {name} has started cleaning and completed at least one room.
+              <br />All of {name}'s rooms are still upcoming.
+            </LancyBubble>
+          );
+          setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+          return;
+        }
 
         const roomNudges = hkRooms.map(r => `Room ${r.number}`);
         setFlow({ ...flow, step: 'AWAITING_REORDER_ROOM', action: 'reorder' });
@@ -1904,11 +2099,36 @@ function LancyApp() {
       if (match) {
         const roomNum = match[0];
         const name = flow.selectedHK!;
+        const dbRooms = await lancyService.getRooms();
+        const hkUpcoming = sortHkRooms(dbRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
+        const slotsWithout = hkUpcoming.filter(r => r.number !== roomNum);
+        const maxPos = slotsWithout.length + 1;
+
+        if (maxPos === 1) {
+          // Only one slot — skip the question, auto-place
+          await reorderHousekeeperQueue(name, roomNum, 1);
+          const freshRooms = await lancyService.getRooms();
+          const dbHksRefresh = await lancyService.getHousekeepers();
+          setDbHksList(dbHksRefresh);
+          setSimState(compileSimulation(selectedTime, freshRooms, dbHksRefresh));
+          const freshUpcoming = sortHkRooms(freshRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
+          const listStr = freshUpcoming.map((r, i) => `${i + 1}. Room ${r.number} — ${r.scheduled_start_time} to ${r.scheduled_end_time}`).join('\n');
+          setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+          pushMsgWithNudges(
+            <>
+              Done. Room {roomNum} added to {name}'s queue — it's the only upcoming task.
+              <br /><br />Updated schedule:<br />
+              {listStr.split('\n').map((line, i) => <span key={i}>{line}<br /></span>)}
+            </>,
+            ["See another housekeeper", "Done"]
+          );
+          return;
+        }
 
         setFlow({ ...flow, step: 'AWAITING_REORDER_POSITION', selectedRoom: roomNum });
         pushMsg(
           <LancyBubble>
-            Where would you like Room {roomNum} in {name}'s queue?
+            Where would you like Room {roomNum} in {name}'s queue? (1 to {maxPos})
             <br />
             Type a position like 'first', 'second', 'top', or 'number 2' — or just say the number.
           </LancyBubble>
@@ -1926,9 +2146,12 @@ function LancyApp() {
       const roomNum = flow.selectedRoom!;
 
       const dbRooms = await lancyService.getRooms();
-      const hkRooms = sortHkRooms(dbRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
+      const hkAllRooms = dbRooms.filter(r => r.attendant === name);
+      const hkUpcoming = sortHkRooms(hkAllRooms.filter(r => isStatusUpcoming(r.status)));
 
-      const maxPos = hkRooms.length;
+      // maxPos = number of upcoming slots after removing the selected room (so 'last' places it at the true end)
+      const slotsWithoutRoom = hkUpcoming.filter(r => r.number !== roomNum);
+      const maxPos = slotsWithoutRoom.length + 1; // +1 because the room itself will be inserted
       const targetPos = parsePosition(clean, maxPos);
 
       // Run reorder

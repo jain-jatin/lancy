@@ -247,7 +247,10 @@ End with a yes/no question so he can act immediately.
     // ==========================================
     // 2. DETERMINISTIC INTENT ROUTING (FIX 3)
     // ==========================================
-    const assignments = await getAssignmentsData();
+    const hasActionKeyword = /(?:assign|move|give|reassign|put|transfer|switch|allocate|ticket|maintenance|block|fix|damage|found|lost|rework|reorder|redo|reclean)/i.test(cleanMsg);
+
+    if (!hasActionKeyword) {
+      const assignments = await getAssignmentsData();
 
     // Intent A: ROOM STATUS (matched by any 3-digit number)
     const roomNumMatch = cleanMsg.match(/\b\d{3}\b/);
@@ -488,6 +491,7 @@ End with a yes/no question so he can act immediately.
       await dbOperations.addMessage("lancy", "Lancy", reply);
       return { reply, buttons: [] };
     }
+    }
 
     // ==========================================
     // 3. FREEFORM GEMINI FALLBACK (Step 4)
@@ -526,6 +530,8 @@ End with a yes/no question so he can act immediately.
 
         let reply = "";
         const parts = response.candidates?.[0]?.content?.parts || [];
+        let toolResultStr: string | null = null;
+
         for (const part of parts) {
           if (part.text) {
             reply += part.text;
@@ -534,12 +540,30 @@ End with a yes/no question so he can act immediately.
             const { name, args } = part.functionCall;
             const res = await executeTool(name, args);
             if (res && typeof res === 'string') {
-              reply += "\n" + res;
+              toolResultStr = res;
             }
           }
         }
+
+        // If Gemini called a tool, send the result back and get a natural-language reply
+        if (toolResultStr) {
+          try {
+            const followUp = await chat.sendMessage([{
+              functionResponse: {
+                name: parts.find((p: any) => p.functionCall)?.functionCall?.name || '',
+                response: { result: toolResultStr }
+              }
+            }]);
+            const followUpText = followUp.response.text();
+            reply = followUpText || toolResultStr;
+          } catch {
+            // If follow-up fails, use the raw tool result directly
+            reply = toolResultStr;
+          }
+        }
+
         if (!reply) {
-          reply = "I've handled that operational request.";
+          reply = "Done.";
         }
 
         await dbOperations.addMessage("lancy", "Lancy", reply);
