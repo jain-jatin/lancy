@@ -81,6 +81,47 @@ function LancyApp() {
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [showHandoff, setShowHandoff] = useState(false);
   const [showDraft, setShowDraft] = useState(false);
+
+  const isStatusUpcoming = (statusStr: string | null | undefined): boolean => {
+    const s = (statusStr || "").toLowerCase();
+    return s === "dirty" || s === "occupied";
+  };
+
+  const isStatusCleaning = (statusStr: string | null | undefined): boolean => {
+    return (statusStr || "").toLowerCase() === "cleaning";
+  };
+
+  const isStatusReady = (statusStr: string | null | undefined): boolean => {
+    return (statusStr || "").toLowerCase() === "ready";
+  };
+
+  const formatTaskTime = (tStr: string | null | undefined): string => {
+    if (!tStr) return "10:00 AM";
+    let working = tStr.trim();
+    if (working.startsWith('T') || working.startsWith('t')) {
+      working = working.substring(1);
+    }
+    if (working.includes('T')) {
+      working = working.split('T')[1];
+    }
+    const parts = working.split(':');
+    if (parts.length < 2) return "10:00 AM";
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (isNaN(h) || isNaN(m)) return "10:00 AM";
+    const displayHour = h % 12 || 12;
+    const ampm = h >= 12 ? "PM" : "AM";
+    return `${displayHour}:${m.toString().padStart(2, '0')} ${ampm}`;
+  };
+
+  const sortHkRooms = (rooms: Room[]): Room[] => {
+    return [...rooms].sort((a, b) => {
+      const order: Record<string, number> = { STE: 0, Suite: 0, DLX: 1, Deluxe: 1, STD: 2, Standard: 2 };
+      const diff = (order[a.type] ?? 2) - (order[b.type] ?? 2);
+      if (diff !== 0) return diff;
+      return timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00");
+    });
+  };
   const [extra, setExtra] = useState<ChatItem[]>(() => [
     {
       id: "greeting",
@@ -1457,7 +1498,7 @@ function LancyApp() {
         <>
           Would you like to see any housekeeper's upcoming tasks?
         </>,
-        ["Ana", "Rosa", "James", "Priya", "Sofia"]
+        dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"]
       );
       return;
     }
@@ -1468,7 +1509,7 @@ function LancyApp() {
         <>
           Which housekeeper's queue would you like to edit?
         </>,
-        ["Ana", "Rosa", "James", "Priya", "Sofia"]
+        dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"]
       );
       return;
     }
@@ -1482,22 +1523,17 @@ function LancyApp() {
       clean.match(/upcoming\s+tasks\s+for\s+(\w+)/i);
     if (showTasksMatch) {
       const name = showTasksMatch[1].charAt(0).toUpperCase() + showTasksMatch[1].slice(1).toLowerCase();
-      const validNames = ["Ana", "Rosa", "James", "Priya", "Sofia"];
+      const validNames = dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"];
       if (validNames.includes(name)) {
         const dbRooms = await lancyService.getRooms();
-        const hkRooms = dbRooms.filter(r => r.attendant === name && r.status === "dirty");
-        hkRooms.sort((a, b) => timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00"));
+        const hkRooms = sortHkRooms(dbRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
 
         let contentText = "";
         if (hkRooms.length === 0) {
-          contentText = `${name} has no upcoming dirty rooms in their queue.`;
+          contentText = `${name} has no upcoming tasks.`;
         } else {
-          contentText = `${name}'s upcoming tasks:\n\n`;
-          hkRooms.forEach((r, idx) => {
-            const typeLabel = r.type === "STE" ? "Suite" : r.type === "DLX" ? "Deluxe" : "Standard";
-            contentText += `${idx + 1}. Room ${r.number} (${typeLabel}) — starts ${r.scheduled_start_time}, done by ${r.scheduled_end_time}\n`;
-          });
-          contentText += `\nWhat would you like to do?`;
+          const roomList = hkRooms.map(r => `Room ${r.number} (${formatTaskTime(r.scheduled_start_time)})`).join(", ");
+          contentText = `${name}: ${roomList}`;
         }
 
         setFlow({ step: 'AWAITING_ACTION', selectedHK: name, selectedRoom: null, action: null });
@@ -1514,19 +1550,19 @@ function LancyApp() {
     if (reassignMatch) {
       const roomNum = reassignMatch[1];
       const destHkName = reassignMatch[2].charAt(0).toUpperCase() + reassignMatch[2].slice(1).toLowerCase();
-      const validNames = ["Ana", "Rosa", "James", "Priya", "Sofia"];
+      const validNames = dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"];
 
       if (validNames.includes(destHkName)) {
         const dbRooms = await lancyService.getRooms();
         const rm = dbRooms.find(r => r.number === roomNum);
 
-        if (rm && (rm.status === "cleaning" || rm.status === "ready")) {
+        if (rm && (isStatusCleaning(rm.status) || isStatusReady(rm.status))) {
           pushMsg(<LancyBubble>Room {roomNum} is already {rm.status}, it cannot be reassigned.</LancyBubble>);
           setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
           return;
         }
 
-        if (rm && rm.status === "dirty") {
+        if (rm && isStatusUpcoming(rm.status)) {
           const sourceHkName = rm.attendant || "Ana";
           if (sourceHkName === destHkName) {
             pushMsg(<LancyBubble>Room {roomNum} is already assigned to {destHkName}.</LancyBubble>);
@@ -1538,8 +1574,7 @@ function LancyApp() {
           await reassignRoomBetweenHks(roomNum, sourceHkName, destHkName);
 
           const freshRooms = await lancyService.getRooms();
-          const toHkRooms = freshRooms.filter(r => r.attendant === destHkName && r.status === "dirty");
-          toHkRooms.sort((a, b) => timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00"));
+          const toHkRooms = sortHkRooms(freshRooms.filter(r => r.attendant === destHkName && isStatusUpcoming(r.status)));
 
           let listStr = "";
           toHkRooms.forEach((r, idx) => {
@@ -1593,12 +1628,11 @@ function LancyApp() {
       const rm = dbRooms.find(r => r.number === reorderRoom);
       const hkName = rm ? rm.attendant : null;
 
-      if (hkName && rm && rm.status === "dirty") {
+      if (hkName && rm && isStatusUpcoming(rm.status)) {
         await reorderHousekeeperQueue(hkName, reorderRoom, reorderPos);
 
         const freshRooms = await lancyService.getRooms();
-        const hkRooms = freshRooms.filter(r => r.attendant === hkName && r.status === "dirty");
-        hkRooms.sort((a, b) => timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00"));
+        const hkRooms = sortHkRooms(freshRooms.filter(r => r.attendant === hkName && isStatusUpcoming(r.status)));
 
         let listStr = "";
         hkRooms.forEach((r, idx) => {
@@ -1668,8 +1702,7 @@ function LancyApp() {
             }
 
             const freshRooms = await lancyService.getRooms();
-            const hkRooms = freshRooms.filter(r => r.attendant === hkName && r.status === "dirty");
-            hkRooms.sort((a, b) => timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00"));
+            const hkRooms = sortHkRooms(freshRooms.filter(r => r.attendant === hkName && isStatusUpcoming(r.status)));
 
             let listStr = "";
             hkRooms.forEach((r, idx) => {
@@ -1702,22 +1735,17 @@ function LancyApp() {
     // STEP 1: AWAITING_HK_SELECT
     if (flow.step === 'AWAITING_HK_SELECT') {
       const name = clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
-      const validNames = ["Ana", "Rosa", "James", "Priya", "Sofia"];
+      const validNames = dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"];
       if (validNames.includes(name)) {
         const dbRooms = await lancyService.getRooms();
-        const hkRooms = dbRooms.filter(r => r.attendant === name && r.status === "dirty");
-        hkRooms.sort((a, b) => timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00"));
+        const hkRooms = sortHkRooms(dbRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
 
         let contentText = "";
         if (hkRooms.length === 0) {
-          contentText = `${name} has no upcoming dirty rooms in their queue.`;
+          contentText = `${name} has no upcoming tasks.`;
         } else {
-          contentText = `${name}'s upcoming tasks:\n\n`;
-          hkRooms.forEach((r, idx) => {
-            const typeLabel = r.type === "STE" ? "Suite" : r.type === "DLX" ? "Deluxe" : "Standard";
-            contentText += `${idx + 1}. Room ${r.number} (${typeLabel}) — starts ${r.scheduled_start_time}, done by ${r.scheduled_end_time}\n`;
-          });
-          contentText += `\nWhat would you like to do?`;
+          const roomList = hkRooms.map(r => `Room ${r.number} (${formatTaskTime(r.scheduled_start_time)})`).join(", ");
+          contentText = `${name}: ${roomList}`;
         }
 
         setFlow({ step: 'AWAITING_ACTION', selectedHK: name, selectedRoom: null, action: null });
@@ -1737,8 +1765,7 @@ function LancyApp() {
       if (clean.includes("reorder")) {
         const name = flow.selectedHK!;
         const dbRooms = await lancyService.getRooms();
-        const hkRooms = dbRooms.filter(r => r.attendant === name && r.status === "dirty");
-        hkRooms.sort((a, b) => timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00"));
+        const hkRooms = sortHkRooms(dbRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
 
         const roomNudges = hkRooms.map(r => `Room ${r.number}`);
         setFlow({ ...flow, step: 'AWAITING_REORDER_ROOM', action: 'reorder' });
@@ -1754,8 +1781,7 @@ function LancyApp() {
       } else if (clean.includes("assign") || clean.includes("reassign") || clean.includes("someone else")) {
         const name = flow.selectedHK!;
         const dbRooms = await lancyService.getRooms();
-        const hkRooms = dbRooms.filter(r => r.attendant === name && r.status === "dirty");
-        hkRooms.sort((a, b) => timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00"));
+        const hkRooms = sortHkRooms(dbRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
 
         const roomNudges = hkRooms.map(r => `Room ${r.number}`);
         setFlow({ ...flow, step: 'AWAITING_REASSIGN_TASK', action: 'reassign' });
@@ -1800,8 +1826,7 @@ function LancyApp() {
       const roomNum = flow.selectedRoom!;
 
       const dbRooms = await lancyService.getRooms();
-      const hkRooms = dbRooms.filter(r => r.attendant === name && r.status === "dirty");
-      hkRooms.sort((a, b) => timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00"));
+      const hkRooms = sortHkRooms(dbRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
 
       const maxPos = hkRooms.length;
       const targetPos = parsePosition(clean, maxPos);
@@ -1811,8 +1836,7 @@ function LancyApp() {
 
       // Get new schedule
       const freshRooms = await lancyService.getRooms();
-      const newHkRooms = freshRooms.filter(r => r.attendant === name && r.status === "dirty");
-      newHkRooms.sort((a, b) => timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00"));
+      const newHkRooms = sortHkRooms(freshRooms.filter(r => r.attendant === name && isStatusUpcoming(r.status)));
 
       let listStr = "";
       newHkRooms.forEach((r, idx) => {
@@ -1844,7 +1868,8 @@ function LancyApp() {
         const roomNum = match[0];
         const name = flow.selectedHK!;
 
-        const otherHks = ["Ana", "Rosa", "James", "Priya", "Sofia"].filter(h => h !== name);
+        const allHkNames = dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"];
+        const otherHks = allHkNames.filter(h => h !== name);
         setFlow({ ...flow, step: 'AWAITING_REASSIGN_PERSON', selectedRoom: roomNum });
         pushMsgWithNudges(
           <>
@@ -1862,7 +1887,7 @@ function LancyApp() {
     // STEP 6: AWAITING_REASSIGN_PERSON
     if (flow.step === 'AWAITING_REASSIGN_PERSON') {
       const destHkName = clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
-      const validNames = ["Ana", "Rosa", "James", "Priya", "Sofia"];
+      const validNames = dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"];
 
       if (validNames.includes(destHkName)) {
         const sourceHkName = flow.selectedHK!;
@@ -1872,8 +1897,7 @@ function LancyApp() {
         await reassignRoomBetweenHks(roomNum, sourceHkName, destHkName);
 
         const freshRooms = await lancyService.getRooms();
-        const toHkRooms = freshRooms.filter(r => r.attendant === destHkName && r.status === "dirty");
-        toHkRooms.sort((a, b) => timeToMinutes(a.scheduled_start_time || "10:00") - timeToMinutes(b.scheduled_start_time || "10:00"));
+        const toHkRooms = sortHkRooms(freshRooms.filter(r => r.attendant === destHkName && isStatusUpcoming(r.status)));
 
         let listStr = "";
         toHkRooms.forEach((r, idx) => {
@@ -1992,6 +2016,11 @@ function LancyApp() {
       toast.success("Assignments generated!");
 
       setTimeout(async () => {
+        const dbRooms = await lancyService.getRooms();
+        const dbHks = await lancyService.getHousekeepers();
+        setDbHksList(dbHks);
+        setSimState(compileSimulation(selectedTime, dbRooms, dbHks));
+
         pushMsgWithNudges(
           <>
             Done. All 15 rooms assigned across your 5 housekeepers.
@@ -2000,7 +2029,7 @@ function LancyApp() {
             <br /><br />
             Would you like to see any housekeeper's upcoming tasks?
           </>,
-          ["Ana", "Rosa", "James", "Priya", "Sofia"]
+          dbHks.map(h => h.name)
         );
 
         setFlow({
@@ -2009,12 +2038,6 @@ function LancyApp() {
           selectedRoom: null,
           action: null
         });
-
-        // Reload views
-        const dbRooms = await lancyService.getRooms();
-        const dbHks = await lancyService.getHousekeepers();
-        setDbHksList(dbHks);
-        setSimState(compileSimulation(selectedTime, dbRooms, dbHks));
 
         // Call analyzeAndAlert 3 seconds after assignments are confirmed (2500ms remaining after the 500ms delay)
         setTimeout(async () => {

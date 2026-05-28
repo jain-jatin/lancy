@@ -193,17 +193,18 @@ End with a yes/no question so he can act immediately.
         }
       }
 
-      const states = (mockDb as any).getRoomState ? (mockDb as any).getRoomState(today) : [];
-      return states.map((r: any) => ({
-        room_number: r.room_number,
+      const localRooms = await dbOperations.getRooms();
+      const assignedRooms = localRooms.filter(r => r.attendant);
+      return assignedRooms.map((r: any) => ({
+        room_number: r.number,
         floor: r.floor,
-        room_type: r.room_type,
-        housekeeper_name: r.housekeeper_name,
+        room_type: r.type,
+        housekeeper_name: r.attendant,
         status: (r.status || 'DIRTY').toUpperCase(),
-        scheduled_start: r.scheduled_start,
-        scheduled_end: r.scheduled_end,
-        actual_start: r.actual_start,
-        actual_end: r.actual_end,
+        scheduled_start: r.scheduled_start_time,
+        scheduled_end: r.scheduled_end_time,
+        actual_start: r.actual_start_time,
+        actual_end: r.actual_end_time,
       }));
     };
 
@@ -327,7 +328,12 @@ End with a yes/no question so he can act immediately.
         // Read status as single source of truth — never infer from time
         const current = hkTasks.find(r => r.status === 'CLEANING');
         const upcoming = hkTasks.filter(r => r.status === 'DIRTY')
-          .sort((a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime());
+          .sort((a, b) => {
+            const order: Record<string, number> = { STE: 0, Suite: 0, DLX: 1, Deluxe: 1, STD: 2, Standard: 2 };
+            const diff = (order[a.room_type] ?? 2) - (order[b.room_type] ?? 2);
+            if (diff !== 0) return diff;
+            return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
+          });
         const past = hkTasks.filter(r => r.status === 'READY');
 
         if (current) {
@@ -336,7 +342,11 @@ End with a yes/no question so he can act immediately.
         } else if (upcoming.length > 0) {
           const next = upcoming[0];
           const start = formatTime(next.scheduled_start);
-          reply = `${name} has finished ${pronounPossessive} current room.\nNext: Room ${next.room_number} at ${start}.`;
+          if (past.length > 0) {
+            reply = `${name} has finished ${pronounPossessive} current room.\nNext: Room ${next.room_number} at ${start}.`;
+          } else {
+            reply = `${name} is ready to start. First task: Room ${next.room_number} at ${start}.`;
+          }
         } else if (past.length > 0 && upcoming.length === 0) {
           reply = `${name} has completed all ${pronounPossessive} rooms for today.`;
         } else {
