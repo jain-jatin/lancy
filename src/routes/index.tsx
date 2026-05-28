@@ -9,10 +9,10 @@ import { HandoffScreen } from "@/UI/views/HandoffScreen";
 import { InputBar } from "@/UI/components/InputBar";
 import { BottomNav, Tab } from "@/UI/components/BottomNav";
 import { RoomsView } from "@/UI/views/RoomsView";
-import { CleanerView } from "@/UI/views/CleanerView";
+import { AssignmentPlanCard } from "@/UI/components/AssignmentPlanCard";
 import { Room, housekeepers, Housekeeper } from "@/simulation/data";
 import { lancyService } from "@/Backend/services/lancy-service";
-import { compileSimulation, timeToMinutes, HK_ARRIVALS } from "@/simulation/engine";
+import { compileSimulation, timeToMinutes } from "@/simulation/engine";
 import { AppSelect } from "@/UI/components/AppSelect";
 
 export const Route = createFileRoute("/")({ component: LancyApp });
@@ -683,7 +683,68 @@ function LancyApp() {
     console.log("[index.tsx] onSend triggered with text:", text);
     setExtra((prev) => prev.filter((item) => item.id !== "greeting-btn" && !item.id.endsWith("-btn")));
     pushMsg(<MarcusBubble>{text}</MarcusBubble>);
-    
+
+    const clean = text.trim().toLowerCase();
+
+    // 1. Intercept tab transitions
+    if (clean.includes("room turnarounds") || clean.includes("turnarounds") || clean.includes("go to rooms")) {
+      setTab("rooms");
+      toast.info("Switching to Rooms tab.");
+      return;
+    }
+
+    // 2. Intercept Assignment Generation
+    if (clean.includes("generate room assignments") || clean.includes("generate assignments") || clean.includes("auto assign")) {
+      setTimeout(() => {
+        pushMsg(
+          <LancyBubble>
+            I have generated the shift assignment plan: Suites are prioritized first, Deluxe second, and Standard third. Within each type, assignments are distributed by floor proximity.
+          </LancyBubble>
+        );
+
+        setTimeout(() => {
+          pushMsg(
+            <AssignmentPlanCard
+              onConfirm={async () => {
+                const plan: Record<string, string[]> = {
+                  Ana: ["203", "201", "202"],
+                  Rosa: ["205", "204", "301"],
+                  James: ["303", "304", "302"],
+                  Priya: ["305", "401", "402"],
+                  Sofia: ["505", "403", "503"],
+                };
+                await lancyService.confirmAssignments(plan);
+                toast.success("Assignments confirmed!");
+                pushMsg(
+                  <LancyBubble>
+                    ✅ Housekeeping assignments saved to database successfully! All 5 housekeepers are now working according to their scheduled plans.
+                  </LancyBubble>
+                );
+
+                // Reload view state
+                const dbRooms = await lancyService.getRooms();
+                const dbHks = await lancyService.getHousekeepers();
+                setSimState((prev) => {
+                  const updatedRooms = { ...prev.rooms };
+                  dbRooms.forEach((r) => {
+                    if (updatedRooms[r.number]) {
+                      updatedRooms[r.number] = { ...updatedRooms[r.number], ...r };
+                    }
+                  });
+                  return { ...prev, rooms: updatedRooms };
+                });
+              }}
+              onAdjust={() => {
+                setTab("rooms");
+                toast.info("Switching to Rooms tab. Tap any room chip to reassign.");
+              }}
+            />
+          );
+        }, 500);
+      }, 600);
+      return;
+    }
+
     // Call the intelligent operations AI
     const res = await lancyService.lancyChat(text, undefined, selectedTime);
     console.log("[index.tsx] lancyChat response resolved:", res);
@@ -737,10 +798,10 @@ function LancyApp() {
           pushMsg(
             <div className="flex flex-wrap gap-2 mt-1 pl-1">
               <button
-                onClick={() => onSendRef.current("Go to Room turnarounds")}
+                onClick={() => onSendRef.current("Generate room assignments")}
                 className="h-9 px-4 rounded-full border border-emerald-600 bg-white text-[13px] font-semibold text-emerald-700 active:bg-emerald-50 hover:bg-emerald-50 transition-all shadow-sm animate-fade-in"
               >
-                Continue to room Turnarounds
+                Generate room assignments
               </button>
             </div>,
             crypto.randomUUID() + "-btn"
@@ -765,16 +826,7 @@ function LancyApp() {
             {/* Left: hotel + name or attendant dropdown */}
             <div className="shrink-0">
               <div className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider leading-none">Maplewood Suites</div>
-              {tab === "cleaner" ? (
-                <AppSelect
-                  value={activeHkName}
-                  onChange={setActiveHkName}
-                  options={housekeepers.map((h) => ({ value: h.name, label: h.name }))}
-                  headerVariant
-                />
-              ) : (
-                <h1 className="text-[20px] font-extrabold tracking-tight text-[#1A1A2E] leading-tight">Marcus</h1>
-              )}
+              <h1 className="text-[20px] font-extrabold tracking-tight text-[#1A1A2E] leading-tight">Marcus</h1>
             </div>
             {/* Right: compact time dropdown + simulate */}
             <div data-tour="simulate" className="flex items-center gap-2 flex-1 justify-end">
@@ -912,19 +964,6 @@ function LancyApp() {
 
           {tab === "rooms" && (
             <RoomsView onSelectRoom={(r) => setActiveRoom(r)} roomsList={roomsList} />
-          )}
-
-          {tab === "cleaner" && (
-            <CleanerView
-              roomsList={roomsList}
-              onUpdateRoomStatus={handleUpdateRoomStatus}
-              onSelectHousekeeper={setActiveHkName}
-              activeHkName={activeHkName}
-              selectedTime={selectedTime}
-              chatMap={hkChatMap}
-              onHousekeeperChat={handleHousekeeperChat}
-              hkStatus={simState.housekeepers[activeHkName]?.status}
-            />
           )}
         </div>
 

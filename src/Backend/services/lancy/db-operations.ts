@@ -184,98 +184,29 @@ export const dbOperations = {
    * Never cache this. Call it before every single Gemini API invocation.
    */
   async buildLiveSystemPrompt(simTime: string, context?: { role: 'supervisor' | 'housekeeper'; hkName?: string }): Promise<string> {
-    // Fresh queries — never cached
     const rooms = await this.getRooms();
     const housekeepers = await this.getHousekeepers();
     const currentMins = this.timeToMins(simTime);
 
-    // Build room lines with full state
     const roomLines = rooms.map(r => {
       const hk = r.attendant || 'unassigned';
       const isContinuing = continuingRooms.includes(r.number);
       const stayType = isContinuing ? 'continuing stay' : 'checkout';
-      const flags: string[] = [];
-      if (r.damageReported) flags.push('DAMAGE REPORTED');
-      if (r.note) flags.push(`MAINTENANCE: ${r.note}`);
-      if (r.status === 'blocked') flags.push('BLOCKED');
-      if (r.flagged) flags.push('FLAGGED');
-      const flagStr = flags.length > 0 ? ` [${flags.join(' | ')}]` : '';
-      return `Room ${r.number} | Floor ${r.floor} | ${r.type} | ${stayType} | ${r.status} | ${hk}${flagStr}`;
+      return `Room ${r.number} | Floor ${r.floor} | ${r.type} | ${stayType} | ${r.status} | ${hk}`;
     }).join('\n');
 
-    // Build housekeeper lines with arrival awareness
     const hkLines = housekeepers.map(h => {
-      const arrTime = this.hkArrivals[h.name] || '08:00';
-      const checkedIn = h.status === 'PRESENT' || h.status === 'IDLE' || h.status === 'INSPECTION' || h.status === 'CLEANING';
-      const arrived = currentMins >= this.timeToMins(arrTime) || checkedIn;
       if (h.status === 'ABSENT') return `${h.name}: ABSENT`;
-      if (!arrived) return `${h.name}: NOT YET ARRIVED (arrives ${arrTime})`;
       if (!h.current_room) return `${h.name}: IDLE (available)`;
-      return `${h.name}: ${h.current_activity} in Room ${h.current_room}`;
+      return `${h.name}: CLEANING Room ${h.current_room}`;
     }).join('\n');
 
-    // Build review queue
-    const reviewRooms = rooms.filter(r => r.status === 'review');
-    const reviewLines = reviewRooms.length > 0
-      ? reviewRooms.map(r => `Room ${r.number} (${r.type}, Floor ${r.floor}), attendant: ${r.attendant || 'unknown'}`).join('\n')
-      : 'None';
-
-    // Counts for quick reference
     const counts = {
       dirty: rooms.filter(r => r.status === 'dirty').length,
-      inspection: rooms.filter(r => r.status === 'inspection').length,
       cleaning: rooms.filter(r => r.status === 'cleaning').length,
-      review: reviewRooms.length,
-      blocked: rooms.filter(r => r.status === 'blocked').length,
       ready: rooms.filter(r => r.status === 'ready').length,
       occupied: rooms.filter(r => r.status === 'occupied').length,
     };
-
-    // Proactive context: derive overdue, maintenance, incidents from live data
-    const expectedDurations: Record<string, Record<string, number>> = {
-      inspection: { STD: 15, DLX: 15, STE: 15 },
-      cleaning: { STD: 25, DLX: 35, STE: 45 },
-    };
-
-    const overdueRooms = rooms.filter(r => {
-      if (r.status !== 'inspection' && r.status !== 'cleaning') return false;
-      if (!r.startedAt) return false;
-      const startMins = this.timeToMins(r.startedAt);
-      const elapsed = currentMins - startMins;
-      const expected = expectedDurations[r.status]?.[r.type] || 25;
-      return elapsed > expected;
-    }).map(r => {
-      const startMins = this.timeToMins(r.startedAt!);
-      const elapsed = currentMins - startMins;
-      const expected = expectedDurations[r.status]?.[r.type] || 25;
-      return `Room ${r.number} has been in ${r.status} for ${elapsed}m (expected ${expected}m) OVERDUE`;
-    });
-
-    const maintenanceTickets = rooms.filter(r => r.status === 'blocked' || r.note).map(r => {
-      const desc = r.note || 'Blocked, reason unknown';
-      const severity = r.status === 'blocked' ? 'MAJOR' : 'MINOR';
-      return `Room ${r.number}: ${desc} (${severity})`;
-    });
-
-    const incidents = rooms.filter(r => r.damageReported || r.flagged).map(r => {
-      const desc = r.damageReported ? 'Damage reported' : 'Flagged for attention';
-      return `Room ${r.number}: ${desc}`;
-    });
-
-    const proactiveContext = `
-THINGS THAT NEED ATTENTION RIGHT NOW:
-${maintenanceTickets.length > 0
-  ? maintenanceTickets.map(t => `Maintenance ticket open: ${t}`).join('\n')
-  : 'No open maintenance tickets'}
-
-${overdueRooms.length > 0
-  ? 'OVERDUE:\n' + overdueRooms.join('\n')
-  : 'All rooms on track'}
-
-${incidents.length > 0
-  ? incidents.map(i => `Incident logged: ${i}`).join('\n')
-  : 'No incidents logged this shift'}
-`;
 
     const basePrompt = `
 You are Lancy, AI operations partner for Marcus at Maplewood Suites.
@@ -284,38 +215,21 @@ Current simulation time: ${simTime}.
 LIVE ROOM DATA (read this before every response):
 ${roomLines}
 
-COUNTS: ${counts.dirty} dirty, ${counts.inspection} inspecting, ${counts.cleaning} cleaning, ${counts.review} pending review, ${counts.blocked} blocked, ${counts.ready} ready, ${counts.occupied} occupied
+COUNTS: ${counts.dirty} dirty, ${counts.cleaning} cleaning, ${counts.ready} ready, ${counts.occupied} occupied
 
 LIVE HOUSEKEEPER DATA:
 ${hkLines}
 
-PENDING REVIEWS:
-${reviewLines}
+TASK DURATIONS:
+- Standard (STD): 25 minutes
+- Deluxe (DLX): 35 minutes
+- Suite (STE): 45 minutes
 
-TASK DURATIONS (from database):
-- Inspection: 15 minutes (all room types, checkout rooms only)
-- Cleaning STD: 25 minutes
-- Cleaning DLX: 35 minutes
-- Cleaning STE: 45 minutes
-
-STAYOVER ROOM RULES:
-- Rooms marked "continuing stay" have guests still in residence. NO inspection is allowed on these rooms.
-- Continuing stay rooms get cleaning only (towel/linen refresh, tidying).
-- The standard stayover cleaning window is 10:00 AM to 12:00 PM. If a stayover room is cleaned outside this window, flag it as "early cleaning requested".
-- Checkout rooms get the full inspection + cleaning workflow.
-${proactiveContext}
 RULES:
-- When Marcus asks for room status, read the LIVE ROOM DATA above and report it directly. Do not say you are monitoring. Do not say let me know if you need anything. Show the actual data.
-- When the data above shows too many rooms to list cleanly, group them by status.
-- Never fabricate a room status. Never deflect with a generic response when you have real data in front of you.
-- If a question requires data not shown above, say exactly what you do not know. Do not guess.
+- When Marcus asks for room status, read the LIVE ROOM DATA above and report it directly.
 - Never use em dashes or double hyphens. Use commas, colons, or parentheses instead.
-- Respond concisely: 2 sentences max unless building a full status report or plan.
-- Never mark a room READY without Marcus confirming.
-- Never assign a housekeeper without Marcus confirming.
-- If a room is overdue, flag it with the word OVERDUE.
+- Respond concisely: 2 sentences max.
 - Stay focused on housekeeping operations only.
-- Language: English only.
 `;
 
     if (context?.role === 'housekeeper' && context.hkName) {
@@ -324,12 +238,7 @@ RULES:
         return basePrompt + `
 HOUSEKEEPER CONTEXT (you are speaking with ${hk.name}):
 Current room: ${hk.current_room || 'none'}
-Current activity: ${hk.current_activity || 'idle'}
-Rooms completed: ${(hk.rooms_completed || []).join(', ') || 'none yet'}
 Remaining queue: ${(hk.rooms || []).filter(r => !(hk.rooms_completed || []).includes(r)).join(', ') || 'all done'}
-
-You already know which room ${hk.name} is in and what they are doing. Never ask them.
-Reference their room and activity naturally in your responses.
 `;
       }
     }

@@ -1,4 +1,4 @@
-export type RoomStatus = "occupied" | "dirty" | "cleaning" | "inspection" | "review" | "ready" | "blocked" | "empty";
+export type RoomStatus = "occupied" | "dirty" | "cleaning" | "ready";
 export type RoomType = "STD" | "DLX" | "STE";
 
 export interface Room {
@@ -8,14 +8,9 @@ export interface Room {
   status: RoomStatus;
   label: string;
   attendant?: string;
-  startedAt?: string;
-  elapsed?: number;
-  note?: string;
-  flagged?: boolean;
-  priority?: string;
-  damageReported?: boolean;
-  tvIssue?: boolean;
-  isBlocked?: boolean;
+  cleaning_started_at?: string | null;
+  ready_at?: string | null;
+  cleaned_by?: string | null;
 }
 
 export interface Housekeeper {
@@ -23,10 +18,10 @@ export interface Housekeeper {
   rooms: string[];
   active?: boolean;
   current_room?: string | null;
-  current_activity?: "INSPECTION" | "CLEANING" | null;
+  current_activity?: "CLEANING" | null;
   rooms_completed?: string[];
   next_room?: string | null;
-  status?: "PRESENT" | "ABSENT" | "IDLE" | "INSPECTION" | "CLEANING" | "Not Arrived";
+  status?: "PRESENT" | "ABSENT" | "IDLE" | "CLEANING" | "Not Arrived";
 }
 
 export const housekeepers: Housekeeper[] = [
@@ -40,46 +35,62 @@ export const housekeepers: Housekeeper[] = [
 export const statusDot: Record<RoomStatus, string> = {
   occupied: "bg-[#3B82F6]",
   dirty: "bg-[#EF4444]",
-  inspection: "bg-[#F59E0B]",
   cleaning: "bg-[#6366F1]",
-  review: "bg-[#7C3AED]",
   ready: "bg-[#10B981]",
-  blocked: "bg-[#DC2626]",
-  empty: "bg-[#9CA3AF]",
 };
 
 export const statusBorder: Record<RoomStatus, string> = {
   occupied: "border-[#DBEAFE]",
   dirty: "border-[#FEE2E2]",
-  inspection: "border-[#FEF3C7]",
   cleaning: "border-[#E0E7FF]",
-  review: "border-[#EDE9FE]",
   ready: "border-[#D1FAE5]",
-  blocked: "border-[#FEE2E2]",
-  empty: "border-[#F3F4F6]",
 };
 
 export const statusTag: Record<RoomStatus, string> = {
   occupied: "bg-[#DBEAFE] text-[#1E40AF]",
   dirty: "bg-[#FEE2E2] text-[#991B1B]",
-  inspection: "bg-[#FEF3C7] text-[#92400E]",
   cleaning: "bg-[#E0E7FF] text-[#3730A3]",
-  review: "bg-[#EDE9FE] text-[#5B21B6]",
   ready: "bg-[#D1FAE5] text-[#065F46]",
-  blocked: "bg-[#FEE2E2] text-[#7F1D1D]",
-  empty: "bg-[#F3F4F6] text-[#6B7280]",
 };
 
 export const statusLabel: Record<RoomStatus, string> = {
   occupied: "Occupied",
   dirty: "Dirty",
-  inspection: "Inspection",
   cleaning: "Cleaning",
-  review: "Review",
   ready: "Ready",
-  blocked: "Blocked",
-  empty: "Empty",
 };
 
 export const statusColor = statusDot;
-export const rooms: Room[] = [];
+
+export const hotelRoomsBase = [
+  { number: "201", floor: 2, type: "STD" },
+  { number: "202", floor: 2, type: "STD" },
+  { number: "203", floor: 2, type: "DLX" },
+  { number: "204", floor: 2, type: "DLX" },
+  { number: "205", floor: 2, type: "STE" },
+  { number: "301", floor: 3, type: "STD" },
+  { number: "302", floor: 3, type: "STD" },
+  { number: "303", floor: 3, type: "DLX" },
+  { number: "304", floor: 3, type: "DLX" },
+  { number: "305", floor: 3, type: "STE" },
+  { number: "401", floor: 4, type: "STD" },
+  { number: "402", floor: 4, type: "STD" },
+  { number: "403", floor: 4, type: "DLX" },
+  { number: "404", floor: 4, type: "DLX" },
+  { number: "405", floor: 4, type: "STE" },
+  { number: "501", floor: 5, type: "STD" },
+  { number: "502", floor: 5, type: "STD" },
+  { number: "503", floor: 5, type: "DLX" },
+  { number: "504", floor: 5, type: "DLX" },
+  { number: "505", floor: 5, type: "STE" },
+];
+
+export const rooms: Room[] = hotelRoomsBase.map((r) => {
+  const isOccupied = r.number !== "501" && r.number !== "504";
+  return {
+    ...r,
+    type: r.type as RoomType,
+    status: isOccupied ? "occupied" : "ready",
+    label: isOccupied ? "Occupied" : "Empty",
+  };
+});

@@ -1,11 +1,10 @@
-import { MessageCircle, Grid3x3, Users } from "lucide-react";
+import { MessageCircle, Grid3x3 } from "lucide-react";
 
-export type Tab = "chat" | "rooms" | "cleaner";
+export type Tab = "chat" | "rooms";
 
 const tabs: { id: Tab; label: string; Icon: typeof MessageCircle }[] = [
   { id: "chat", label: "Lancy", Icon: MessageCircle },
   { id: "rooms", label: "Rooms", Icon: Grid3x3 },
-  { id: "cleaner", label: "Housekeepers", Icon: Users },
 ];
 
 export function BottomNav({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
@@ -20,11 +19,11 @@ export function BottomNav({ active, onChange }: { active: Tab; onChange: (t: Tab
               onClick={() => onChange(id)}
               data-tour={`nav-${id}`}
               className="flex-1 min-h-[46px] flex flex-col items-center justify-center gap-0.5 relative transition-colors"
-              style={{ color: isActive ? "#2A9D8F" : "#7C7C8A" }}
+              style={{ color: isActive ? "#059669" : "#7C7C8A" }}
             >
               <Icon size={20} strokeWidth={isActive ? 2.2 : 1.8} />
               <span className="text-[10px] font-semibold">{label}</span>
-              {isActive && <span className="absolute bottom-0.5 h-[3px] w-[3px] rounded-full bg-accent" />}
+              {isActive && <span className="absolute bottom-0.5 h-[3px] w-[3px] rounded-full bg-emerald-600" />}
             </button>
           );
         })}

@@ -1,260 +1,215 @@
-import { useState } from "react";
-import {
-  X, Mic, Clock, AlertCircle, Zap, HandHeart, Check, Sparkles,
-} from "lucide-react";
-import { Room, statusTag, statusLabel, housekeepers } from "@/simulation/data";
-import { ActionButton } from "@/UI/components/ActionButton";
-import { getHkColor } from "@/simulation/engine";
-
-const nudges: { Icon: typeof Clock; label: string; reply: string }[] = [
-  { Icon: Clock, label: "How much longer?", reply: "15 mins" },
-  { Icon: AlertCircle, label: "Guest arriving soon", reply: "Almost done" },
-  { Icon: Zap, label: "Please prioritize", reply: "On it" },
-  { Icon: HandHeart, label: "Need help?", reply: "All good" },
-];
+import { useState, useEffect } from "react";
+import { X, Clock, User, CheckCircle2, ChevronRight, Zap } from "lucide-react";
+import { Room, statusTag, statusLabel, Housekeeper } from "@/simulation/data";
+import { lancyService } from "@/Backend/services/lancy-service";
+import { continuingRooms } from "@/simulation/engine";
+import { toast } from "sonner";
 
 interface Props {
   room: Room;
   onClose: () => void;
   onUpdateLancy: (msg: string) => void;
-  onUpdateRoomStatus?: (number: string, status: Room["status"], updates?: Partial<Room>) => void;
-}
-
-function suggestAttendant(room: Room) {
-  const onFloor = housekeepers.find((h) => h.rooms.some((r) => Math.abs(Number(r) - Number(room.number)) < 20));
-  return onFloor ?? housekeepers[0];
+  onUpdateRoomStatus: (number: string, status: Room["status"], updates?: Partial<Room>) => void;
 }
 
 export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus }: Props) {
-  const [recording, setRecording] = useState(false);
-  const [voiceState, setVoiceState] = useState<"idle" | "sent" | "replied">("idle");
-  const [nudgeState, setNudgeState] = useState<{ phase: "idle" | "sent" | "replied"; label?: string; reply?: string }>({ phase: "idle" });
-  const [reviewed, setReviewed] = useState(false);
+  const [hkList, setHkList] = useState<Housekeeper[]>([]);
+  const [roomsList, setRoomsList] = useState<Room[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const hk = housekeepers.find((h) => h.name === room.attendant);
-  const suggested = !hk ? suggestAttendant(room) : null;
-
-  const lancyLine = (() => {
-    if (room.number === "215") return "Running about 9 minutes behind. Maintenance is aware of the shower head.";
-    if (room.number === "412") return "Early arrival at 11, needs to be assigned soon.";
-    if (room.number === "501") return "VIP: please confirm inspection before marking ready.";
-    if (room.status === "cleaning") return "In progress. Everything's on track.";
-    if (room.status === "review") return reviewed ? "Review complete. Ready to mark as ready." : "Housekeeper marked cleaning done. Awaiting your review.";
-    if (room.status === "ready") return "Cleared and inspected.";
-    if (room.status === "dirty") return suggested ? `I'd suggest ${suggested.name}, closest to this floor.` : "Awaiting assignment.";
-    return "Occupied.";
-  })();
-
-  const toggleVoice = () => {
-    if (!recording) {
-      setRecording(true);
-      setVoiceState("idle");
-    } else {
-      setRecording(false);
-      setVoiceState("sent");
-      setTimeout(() => setVoiceState("replied"), 2500);
-    }
+  const fetchLiveState = async () => {
+    setLoading(true);
+    const hks = await lancyService.getHousekeepers();
+    const rms = await lancyService.getRooms();
+    setHkList(hks);
+    setRoomsList(rms);
+    setLoading(false);
   };
 
-  const sendNudge = (label: string, reply: string) => {
-    setNudgeState({ phase: "sent", label, reply });
-    setTimeout(() => setNudgeState({ phase: "replied", label, reply }), 1800);
+  useEffect(() => {
+    fetchLiveState();
+  }, [room.number, room.attendant]);
+
+  const hkName = room.attendant;
+  const hk = hkList.find((h) => h.name === hkName);
+
+  let queuePosition = 0;
+  let scheduledStart = "10:00 AM";
+  let expectedCompletion = "10:25 AM";
+
+  if (hk) {
+    const queueIndex = hk.rooms.indexOf(room.number);
+    queuePosition = queueIndex + 1;
+
+    let currentMins = 600; // 10:00 AM
+    for (let i = 0; i <= queueIndex; i++) {
+      const rNum = hk.rooms[i];
+      const rObj = roomsList.find((r) => r.number === rNum);
+      const rType = rObj ? rObj.type : "STD";
+      const duration = rType === "STE" ? 45 : rType === "DLX" ? 35 : 25;
+
+      if (i === queueIndex) {
+        scheduledStart = formatMins(currentMins);
+        expectedCompletion = formatMins(currentMins + duration);
+      }
+      currentMins += duration;
+    }
+  }
+
+  function formatMins(mins: number): string {
+    const h = Math.floor(mins / 60) % 12 || 12;
+    const m = String(mins % 60).padStart(2, "0");
+    const ampm = Math.floor(mins / 60) >= 12 ? "PM" : "AM";
+    return `${h}:${m} ${ampm}`;
+  }
+
+  const handleReassign = async (newHkName: string) => {
+    await lancyService.assignHousekeeperRoom(newHkName, room.number);
+    toast.success(`Room ${room.number} reassigned to ${newHkName}`);
+    onUpdateRoomStatus(room.number, room.status, { attendant: newHkName });
+    await fetchLiveState();
+  };
+
+  const handleMoveToTop = async () => {
+    if (!hkName) return;
+    await lancyService.moveRoomToTop(hkName, room.number);
+    toast.success(`Room ${room.number} moved to top of ${hkName}'s queue`);
+    onUpdateRoomStatus(room.number, room.status, { attendant: hkName });
+    await fetchLiveState();
   };
 
   return (
     <>
       <div className="absolute inset-0 z-40 bg-black/30 animate-fade-in" onClick={onClose} />
-      <div className="absolute left-0 right-0 bottom-0 z-50 bg-white rounded-t-[20px] animate-slide-up max-h-[88%] flex flex-col">
-        {/* Header */}
-        <div className="px-5 pt-4 pb-4 border-b border-border flex items-start justify-between">
+      <div className="absolute left-0 right-0 bottom-0 z-50 bg-[#EFEDE8] rounded-t-[24px] animate-slide-up max-h-[85%] flex flex-col shadow-2xl border-t border-border/30 overflow-hidden">
+        {/* Header Block */}
+        <div className="px-5 pt-5 pb-4 bg-white border-b border-[#E8E5DF] flex items-center justify-between">
           <div>
-            <div className="text-[10px] text-muted-foreground label-track uppercase font-medium">Room {room.type}</div>
-            <h1 className="text-[26px] font-semibold tracking-tight text-foreground leading-tight">{room.number}</h1>
-            <span className={`mt-2 inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${statusTag[room.status]}`}>
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-extrabold uppercase tracking-widest">
+              <span>Room {room.type}</span>
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/35" />
+              <span>Floor {room.floor}</span>
+            </div>
+            <h1 className="text-[28px] font-extrabold text-[#1A1A2E] tracking-tight mt-0.5 leading-none">{room.number}</h1>
+            <span className={`mt-2.5 inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold ${statusTag[room.status]} shadow-sm`}>
               {statusLabel[room.status]}
             </span>
           </div>
-          <button onClick={onClose} className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center">
-            <X size={16} />
+          <button onClick={onClose} className="h-10 w-10 rounded-full bg-[#EFEDE8] hover:bg-secondary flex items-center justify-center transition-all active:scale-95 shadow-sm">
+            <X size={18} className="text-[#1A1A2E]" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {/* Assignment block */}
-          {hk && (
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="h-11 w-11 rounded-full flex items-center justify-center text-white font-semibold text-[13px]" style={{ backgroundColor: getHkColor(hk.name) }}>
-                  {hk.name.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="flex-1">
-                  <div className="font-semibold text-[14px]">{hk.name}</div>
-                  <div className="text-[12px] text-muted-foreground">
-                    {room.status === "cleaning" ? "Cleaning in progress" : room.status === "review" ? "Cleaning complete · Awaiting supervisor review" : ""}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-2">
-                {room.startedAt && <InfoRow label="Started" value={room.startedAt} />}
-                {room.elapsed !== undefined && <InfoRow label="Elapsed" value={`${room.elapsed} min · avg 25`} />}
-                {room.priority && <InfoRow label="Priority" value={room.priority} />}
-              </div>
-
-              <div className="mt-4 rounded-[12px] bg-accent-light p-3.5 text-[13px] leading-snug text-accent-text flex gap-2">
-                <Sparkles size={14} className="mt-0.5 shrink-0" />
-                <span>{lancyLine}</span>
-              </div>
-              {room.note && (
-                <div className="mt-2.5 text-[13px] bg-secondary rounded-[12px] p-3 leading-snug">
-                  <span className="font-semibold">Note · </span>{room.note}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Dirty — Lancy suggests assignment */}
-          {room.status === "dirty" && suggested && (
-            <div>
-              <div className="text-[10px] font-semibold text-muted-foreground label-track uppercase mb-2">Lancy suggests</div>
-              <div className="rounded-[12px] bg-accent-light p-3.5 flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full flex items-center justify-center text-white font-semibold text-[12px]" style={{ backgroundColor: getHkColor(suggested.name) }}>
-                  {suggested.name.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="flex-1">
-                  <div className="text-[13px] font-semibold text-accent-text">{suggested.name}</div>
-                  <div className="text-[11px] text-accent-text/70">Closest to this floor</div>
-                </div>
-              </div>
-              {room.priority && <div className="mt-2 text-[12px] text-muted-foreground">{room.priority}</div>}
-              <ActionButton
-                variant="primary"
-                className="w-full mt-3"
-                onClick={() => {
-                  if (onUpdateRoomStatus) {
-                    onUpdateRoomStatus(room.number, "cleaning", { attendant: suggested.name, startedAt: "10:00" });
-                  }
-                  onUpdateLancy(`Room ${room.number} assigned to ${suggested.name}.`);
-                  onClose();
-                }}
-              >
-                Assign {suggested.name}
-              </ActionButton>
-            </div>
-          )}
-
-          {/* Inspection flow */}
-          {room.status === "review" && (
-            <div>
-              <div className="text-[10px] font-semibold text-muted-foreground label-track uppercase mb-2">Supervisor review</div>
-              {!reviewed ? (
-                <ActionButton variant="primary" className="w-full" onClick={() => setReviewed(true)}>
-                  <Check size={16} /> Review done
-                </ActionButton>
-              ) : (
-                <ActionButton
-                  variant="primary"
-                  className="w-full"
-                  onClick={() => {
-                    if (onUpdateRoomStatus) {
-                      onUpdateRoomStatus(room.number, "ready");
-                    }
-                    onUpdateLancy(`Room ${room.number} marked ready.`);
-                    onClose();
-                  }}
-                >
-                  Mark as Ready
-                </ActionButton>
-              )}
-            </div>
-          )}
-
-          {/* Voice + nudges */}
-          {hk && room.status === "cleaning" && (
+        {/* Content Block */}
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+          {loading ? (
+            <div className="text-center py-12 text-muted-foreground text-[13px] font-medium">Loading live room data...</div>
+          ) : (
             <>
-              <div>
-                <div className="text-[10px] font-semibold text-muted-foreground label-track uppercase mb-2">Voice Message</div>
-                <button
-                  onClick={toggleVoice}
-                  className={`w-full min-h-12 rounded-[12px] font-semibold flex items-center justify-center gap-2 transition-colors ${
-                    recording ? "bg-accent-light text-accent-text" : "bg-accent text-white"
-                  }`}
-                >
-                  {recording ? (
-                    <div className="flex items-center gap-1 h-5">
-                      {[0, 1, 2].map((i) => (
-                        <span key={i} className="wave-bar w-[3px] h-full bg-accent rounded" style={{ animationDelay: `${i * 0.12}s` }} />
-                      ))}
-                      <span className="ml-2 text-[12px]">Listening…</span>
+              {/* DIRTY & CLEANING FLOW */}
+              {(room.status === "dirty" || room.status === "cleaning") && (
+                <div className="space-y-4">
+                  {/* Assigner Panel */}
+                  <div className="rounded-[18px] bg-white border border-[#E8E5DF] p-4 shadow-sm space-y-3.5">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-extrabold text-muted-foreground uppercase tracking-wider">Assigned Attendant</label>
+                      <div className="relative">
+                        <select
+                          value={hkName || ""}
+                          onChange={(e) => handleReassign(e.target.value)}
+                          className="w-full h-11 px-3.5 rounded-xl border border-[#E8E5DF] bg-[#F8F7F4] text-[13px] font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
+                        >
+                          <option value="" disabled>Select Housekeeper</option>
+                          {hkList.map((h) => (
+                            <option key={h.name} value={h.name}>{h.name}</option>
+                          ))}
+                        </select>
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground font-bold">▼</div>
+                      </div>
                     </div>
-                  ) : (
-                    <><Mic size={16} /> Tap to speak to {hk.name}</>
-                  )}
-                </button>
-                {voiceState === "sent" && <div className="mt-2 text-[12px] text-muted-foreground animate-fade-in">Sent to {hk.name}</div>}
-                {voiceState === "replied" && (
-                  <div className="mt-2 rounded-[12px] bg-secondary p-3 text-[13px] animate-msg-in">
-                    <span className="font-semibold">{hk.name}</span>
-                    <span className="text-muted-foreground"> · just now</span>
-                    <div className="mt-0.5">Got it, on my way.</div>
-                  </div>
-                )}
-              </div>
 
-              <div>
-                <div className="text-[10px] font-semibold text-muted-foreground label-track uppercase mb-2">Quick nudge</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {nudges.map(({ Icon, label, reply }) => (
+                    {hkName && (
+                      <div className="pt-2 border-t border-[#F3F2EF] space-y-2.5">
+                        <div className="flex justify-between items-center text-[12.5px]">
+                          <span className="text-muted-foreground font-medium flex items-center gap-1.5">🕒 Scheduled Start:</span>
+                          <span className="font-bold text-[#1A1A2E]">{scheduledStart}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[12.5px]">
+                          <span className="text-muted-foreground font-medium flex items-center gap-1.5">⏱️ Expected Completion:</span>
+                          <span className="font-bold text-[#1A1A2E]">{expectedCompletion}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[12.5px]">
+                          <span className="text-muted-foreground font-medium flex items-center gap-1.5">🔢 Queue Position:</span>
+                          <span className="font-bold text-[#1A1A2E]">{queuePosition} of {hk.rooms.length} ({hkName})</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Move to Top Button */}
+                  {hkName && queuePosition > 1 && (
                     <button
-                      key={label}
-                      onClick={() => sendNudge(label, reply)}
-                      disabled={nudgeState.phase !== "idle"}
-                      className="min-h-12 px-3 rounded-[12px] bg-white border border-border text-[13px] font-medium flex items-center gap-2 active:bg-secondary transition disabled:opacity-50 text-left"
+                      onClick={handleMoveToTop}
+                      className="w-full h-12 bg-white hover:bg-emerald-50 border border-[#E8E5DF] hover:border-emerald-500/30 text-[13px] font-bold text-emerald-700 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-sm"
                     >
-                      <Icon size={14} className="text-muted-foreground shrink-0" />
-                      <span className="leading-tight">{label}</span>
+                      <Zap size={14} className="fill-emerald-600 text-emerald-600" />
+                      Move to Top of Queue (Next Room)
                     </button>
-                  ))}
+                  )}
                 </div>
-                {nudgeState.phase === "sent" && (
-                  <div className="mt-3 text-[12px] text-muted-foreground animate-fade-in">Nudge sent to {hk.name}</div>
-                )}
-                {nudgeState.phase === "replied" && (
-                  <div className="mt-3 space-y-3 animate-msg-in">
-                    <div className="rounded-[12px] bg-secondary p-3 text-[13px]">
-                      <span className="font-semibold">{hk.name}</span>
-                      <span className="text-muted-foreground"> · replied</span>
-                      <div className="mt-0.5">{nudgeState.reply}</div>
-                    </div>
-                    <ActionButton variant="primary" className="w-full" onClick={() => {
-                      onUpdateLancy(`${hk.name} on Room ${room.number}: ${nudgeState.reply}.`);
-                      onClose();
-                    }}>
-                      Update Lancy
-                    </ActionButton>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
+              )}
 
-          {/* Occupied / Ready empty state */}
-          {(room.status === "occupied" || room.status === "ready") && !hk && (
-            <div className="rounded-[12px] bg-secondary p-4 text-[13px] text-muted-foreground">
-              {room.status === "ready" ? "Room is ready for guest arrival." : "Guest currently in room."}
-            </div>
+              {/* READY FLOW */}
+              {room.status === "ready" && (
+                <div className="rounded-[18px] bg-white border border-[#E8E5DF] p-5 shadow-sm flex flex-col items-center text-center space-y-3">
+                  <div className="h-12 w-12 rounded-full bg-emerald-50 flex items-center justify-center">
+                    <CheckCircle2 className="text-[#10B981]" size={28} />
+                  </div>
+                  <div>
+                    <h3 className="text-[15px] font-extrabold text-[#1A1A2E]">Room Cleaned &amp; Ready</h3>
+                    <p className="text-[12px] text-muted-foreground mt-1 max-w-[80%] mx-auto">This room is cleared and fully sanitized for upcoming guest arrival.</p>
+                  </div>
+                  <div className="w-full pt-3 border-t border-[#F3F2EF] grid grid-cols-2 gap-4 text-left">
+                    <div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase">Attendant</div>
+                      <div className="text-[13px] font-bold text-[#1A1A2E] mt-0.5">{room.cleaned_by || room.attendant || "Sofia"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase">Completed At</div>
+                      <div className="text-[13px] font-bold text-[#1A1A2E] mt-0.5">{room.ready_at || "10:35 AM"}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* OCCUPIED FLOW */}
+              {room.status === "occupied" && (
+                <div className="rounded-[18px] bg-white border border-[#E8E5DF] p-5 shadow-sm space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center">
+                      <User className="text-[#3B82F6]" size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-[14px] font-bold text-[#1A1A2E]">{continuingRooms.includes(room.number) ? "VIP Continuing Guest" : "Stayover Guest"}</h3>
+                      <p className="text-[11px] text-muted-foreground">Guest currently registered in room.</p>
+                    </div>
+                  </div>
+                  <div className="pt-3 border-t border-[#F3F2EF] space-y-2">
+                    <div className="flex justify-between items-center text-[12.5px]">
+                      <span className="text-muted-foreground font-medium">Checkout Schedule:</span>
+                      <span className="font-bold text-[#1A1A2E]">{continuingRooms.includes(room.number) ? "Continuing stayover" : "10:00 AM standard"}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[12.5px]">
+                      <span className="text-muted-foreground font-medium">Housekeeper:</span>
+                      <span className="font-bold text-[#1A1A2E]">{room.attendant || "None assigned"}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
     </>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between py-2 border-b border-[#F3F2EF] last:border-0">
-      <span className="text-[12px] text-muted-foreground label-track uppercase">{label}</span>
-      <span className="text-[13px] font-medium text-foreground">{value}</span>
-    </div>
   );
 }
