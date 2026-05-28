@@ -1646,59 +1646,58 @@ function LancyApp() {
       }
     }
 
-    // NLP 2: DIRECT REASSIGN
-    const reassignMatch = clean.match(/(?:assign|move|give|reassign|put)\s+room\s+(\d{3})\s+(?:to|with)\s+(\w+)/i);
-    if (reassignMatch) {
-      const roomNum = reassignMatch[1];
-      const destHkName = reassignMatch[2].charAt(0).toUpperCase() + reassignMatch[2].slice(1).toLowerCase();
-      const validNames = dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"];
+    // NLP 2: DIRECT REASSIGN (highly generic NLP decoder)
+    const validNames = dbHksList.length > 0 ? dbHksList.map(h => h.name) : ["Ana", "Rosa", "James", "Priya", "Sofia"];
+    const hasReassignKeyword = /(?:assign|move|give|reassign|put|transfer|switch|allocate)/i.test(clean);
+    const roomMatch = clean.match(/\b\d{3}\b/);
+    const destHkName = validNames.find(name => clean.includes(name.toLowerCase()));
 
-      if (validNames.includes(destHkName)) {
-        const dbRooms = await lancyService.getRooms();
-        const rm = dbRooms.find(r => r.number === roomNum);
+    if (hasReassignKeyword && roomMatch && destHkName) {
+      const roomNum = roomMatch[0];
+      const dbRooms = await lancyService.getRooms();
+      const rm = dbRooms.find(r => r.number === roomNum);
 
-        if (rm && (isStatusCleaning(rm.status) || isStatusReady(rm.status))) {
-          pushMsg(<LancyBubble>Room {roomNum} is already {rm.status}, it cannot be reassigned.</LancyBubble>);
+      if (rm && (isStatusCleaning(rm.status) || isStatusReady(rm.status))) {
+        pushMsg(<LancyBubble>Room {roomNum} is already {rm.status}, it cannot be reassigned.</LancyBubble>);
+        setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+        return;
+      }
+
+      if (rm && isStatusUpcoming(rm.status)) {
+        const sourceHkName = rm.attendant || "Ana";
+        if (sourceHkName === destHkName) {
+          pushMsg(<LancyBubble>Room {roomNum} is already assigned to {destHkName}.</LancyBubble>);
           setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
           return;
         }
 
-        if (rm && isStatusUpcoming(rm.status)) {
-          const sourceHkName = rm.attendant || "Ana";
-          if (sourceHkName === destHkName) {
-            pushMsg(<LancyBubble>Room {roomNum} is already assigned to {destHkName}.</LancyBubble>);
-            setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
-            return;
-          }
+        // Run reassign logic
+        await reassignRoomBetweenHks(roomNum, sourceHkName, destHkName);
 
-          // Run reassign logic
-          await reassignRoomBetweenHks(roomNum, sourceHkName, destHkName);
+        const freshRooms = await lancyService.getRooms();
+        const toHkRooms = sortHkRooms(freshRooms.filter(r => r.attendant === destHkName && isStatusUpcoming(r.status)));
 
-          const freshRooms = await lancyService.getRooms();
-          const toHkRooms = sortHkRooms(freshRooms.filter(r => r.attendant === destHkName && isStatusUpcoming(r.status)));
+        let listStr = "";
+        toHkRooms.forEach((r, idx) => {
+          listStr += `${idx + 1}. Room ${r.number} — ${r.scheduled_start_time} to ${r.scheduled_end_time}${r.number === roomNum ? "  ← inserted here" : ""}\n`;
+        });
 
-          let listStr = "";
-          toHkRooms.forEach((r, idx) => {
-            listStr += `${idx + 1}. Room ${r.number} — ${r.scheduled_start_time} to ${r.scheduled_end_time}${r.number === roomNum ? "  ← inserted here" : ""}\n`;
-          });
+        // Reload states
+        const dbHks = await lancyService.getHousekeepers();
+        setDbHksList(dbHks);
+        setSimState(compileSimulation(selectedTime, freshRooms, dbHks));
 
-          // Reload states
-          const dbHks = await lancyService.getHousekeepers();
-          setDbHksList(dbHks);
-          setSimState(compileSimulation(selectedTime, freshRooms, dbHks));
-
-          setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
-          pushMsgWithNudges(
-            <>
-              Done. Room {roomNum} moved from {sourceHkName} to {destHkName}.
-              <br /><br />
-              {destHkName}'s updated queue:<br />
-              {listStr.split("\n").map((line, idx) => <span key={idx}>{line}<br /></span>)}
-            </>,
-            ["See another housekeeper", "Reassign another", "Done"]
-          );
-          return;
-        }
+        setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+        pushMsgWithNudges(
+          <>
+            Done. Room {roomNum} moved from {sourceHkName} to {destHkName}.
+            <br /><br />
+            {destHkName}'s updated queue:<br />
+            {listStr.split("\n").map((line, idx) => <span key={idx}>{line}<br /></span>)}
+          </>,
+          ["See another housekeeper", "Reassign another", "Done"]
+        );
+        return;
       }
     }
 
