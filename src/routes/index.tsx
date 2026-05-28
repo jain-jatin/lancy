@@ -23,7 +23,8 @@ const TIME_STEPS: Record<number, [number, number]> = {
   2: [10, 30],
   3: [11, 0],
   4: [11, 30],
-  5: [12, 0]
+  5: [12, 0],
+  6: [12, 30]
 };
 
 const getSimDateTime = (step: number) => {
@@ -131,7 +132,7 @@ function LancyApp() {
           <br /><br />
           15 rooms checking out at 10:00 AM.
           <br />
-          17 guests arriving by 1:00 PM.
+          17 guests arriving by 12:00 PM.
           <br />
           5 housekeepers ready.
           <br /><br />
@@ -829,105 +830,142 @@ function LancyApp() {
 
   const handleNext = async () => {
     const newStep = currentStep + 1;
-    if (newStep > 5) return;
+    if (newStep > 6) return;
 
     const simTime = getSimDateTime(newStep);
 
     if (isRealSupabaseConfigured && supabase) {
-      const { data: roomsData } = await supabase
-        .from('room_assignments')
-        .select('*')
-        .neq('status', 'OCCUPIED');
-
-      if (!roomsData || roomsData.length === 0) {
-        addLancyMessage(
-          "No assignments found. Please confirm assignments first."
-        );
-        return;
-      }
-
-      const updates = roomsData.map(room => {
-        const start = new Date(room.scheduled_start);
-        const end = new Date(room.scheduled_end);
-        const st = simTime.getTime();
-
-        let status = 'DIRTY';
-        let actual_start = room.actual_start;
-        let actual_end = room.actual_end;
-
-        if (st >= start.getTime() && st < end.getTime()) {
-          status = 'CLEANING';
-          actual_start = room.scheduled_start;
-          actual_end = null;
-        } else if (st >= end.getTime()) {
-          status = 'READY';
-          actual_start = room.scheduled_start;
-          actual_end = room.scheduled_end;
-        } else {
-          status = 'DIRTY';
-          actual_start = null;
-          actual_end = null;
-        }
-
-        // Keep rooms table in sync as well
-        lancyService.updateRoomStatus(room.room_number, status.toLowerCase() as any, {
-          actual_start_time: actual_start,
-          actual_end_time: actual_end,
-        });
-
-        return supabase!
+      if (newStep === 6) {
+        const { data: assignments } = await supabase
           .from('room_assignments')
-          .update({ status, actual_start, actual_end })
-          .eq('id', room.id);
-      });
+          .select('*')
+          .eq('status', 'READY');
+        if (assignments) {
+          const updates = assignments.map(room => {
+            lancyService.updateRoomStatus(room.room_number, 'occupied', {
+              actual_start_time: room.scheduled_start,
+              actual_end_time: room.scheduled_end,
+            });
+            return supabase!
+              .from('room_assignments')
+              .update({ status: 'OCCUPIED' })
+              .eq('id', room.id);
+          });
+          await Promise.all(updates);
+        }
+        await supabase!
+          .from('shifts')
+          .update({ current_step: newStep })
+          .eq('id', 1);
+      } else {
+        const { data: roomsData } = await supabase
+          .from('room_assignments')
+          .select('*')
+          .neq('status', 'OCCUPIED');
 
-      await Promise.all(updates);
-
-      await supabase!
-        .from('shifts')
-        .update({ current_step: newStep })
-        .eq('id', 1);
-    } else {
-      const roomsData = await lancyService.getRooms();
-      const assignedRooms = roomsData.filter(r => r.attendant && (r.scheduled_start_time || r.scheduled_end_time));
-
-      if (assignedRooms.length === 0) {
-        addLancyMessage(
-          "No assignments found. Please confirm assignments first."
-        );
-        return;
-      }
-
-      const [simH, simM] = TIME_STEPS[newStep] || [9, 0];
-      const simMins = simH * 60 + simM;
-
-      for (const room of assignedRooms) {
-        const start = timeToMinutes(room.scheduled_start_time || "10:00");
-        const end = timeToMinutes(room.scheduled_end_time || "10:25");
-
-        let status: Room["status"] = "dirty";
-        let actual_start = room.actual_start_time;
-        let actual_end = room.actual_end_time;
-
-        if (simMins >= start && simMins < end) {
-          status = "cleaning";
-          actual_start = room.scheduled_start_time || "10:00";
-          actual_end = null;
-        } else if (simMins >= end) {
-          status = "ready";
-          actual_start = room.scheduled_start_time || "10:00";
-          actual_end = room.scheduled_end_time || "10:25";
-        } else {
-          status = "dirty";
-          actual_start = null;
-          actual_end = null;
+        if (!roomsData || roomsData.length === 0) {
+          addLancyMessage(
+            "No assignments found. Please confirm assignments first."
+          );
+          return;
         }
 
-        await lancyService.updateRoomStatus(room.number, status, {
-          actual_start_time: actual_start,
-          actual_end_time: actual_end,
-          cleaned_by_name: status === "ready" ? room.attendant : null,
+        const updates = roomsData.map(room => {
+          const start = new Date(room.scheduled_start);
+          const end = new Date(room.scheduled_end);
+          const st = simTime.getTime();
+
+          let status = 'DIRTY';
+          let actual_start = room.actual_start;
+          let actual_end = room.actual_end;
+
+          if (st >= start.getTime() && st < end.getTime()) {
+            status = 'CLEANING';
+            actual_start = room.scheduled_start;
+            actual_end = null;
+          } else if (st >= end.getTime()) {
+            status = 'READY';
+            actual_start = room.scheduled_start;
+            actual_end = room.scheduled_end;
+          } else {
+            status = 'DIRTY';
+            actual_start = null;
+            actual_end = null;
+          }
+
+          // Keep rooms table in sync as well
+          lancyService.updateRoomStatus(room.room_number, status.toLowerCase() as any, {
+            actual_start_time: actual_start,
+            actual_end_time: actual_end,
+          });
+
+          return supabase!
+            .from('room_assignments')
+            .update({ status, actual_start, actual_end })
+            .eq('id', room.id);
         });
+
+        await Promise.all(updates);
+
+        await supabase!
+          .from('shifts')
+          .update({ current_step: newStep })
+          .eq('id', 1);
+      }
+    } else {
+      if (newStep === 6) {
+        const roomsData = await lancyService.getRooms();
+        for (const room of roomsData) {
+          if (room.status === "ready") {
+            await lancyService.updateRoomStatus(room.number, "occupied", {
+              actual_start_time: room.scheduled_start_time || "10:00",
+              actual_end_time: room.scheduled_end_time || "10:25",
+              cleaned_by_name: room.attendant || null,
+            });
+          }
+        }
+      } else {
+        const roomsData = await lancyService.getRooms();
+        const assignedRooms = roomsData.filter(r => r.attendant && (r.scheduled_start_time || r.scheduled_end_time));
+
+        if (assignedRooms.length === 0) {
+          addLancyMessage(
+            "No assignments found. Please confirm assignments first."
+          );
+          return;
+        }
+
+        const [simH, simM] = TIME_STEPS[newStep] || [9, 0];
+        const simMins = simH * 60 + simM;
+
+        for (const room of assignedRooms) {
+          const start = timeToMinutes(room.scheduled_start_time || "10:00");
+          const end = timeToMinutes(room.scheduled_end_time || "10:25");
+
+          let status: Room["status"] = "dirty";
+          let actual_start = room.actual_start_time;
+          let actual_end = room.actual_end_time;
+
+          if (simMins >= start && simMins < end) {
+            status = "cleaning";
+            actual_start = room.scheduled_start_time || "10:00";
+            actual_end = null;
+          } else if (simMins >= end) {
+            status = "ready";
+            actual_start = room.scheduled_start_time || "10:00";
+            actual_end = room.scheduled_end_time || "10:25";
+          } else {
+            status = "dirty";
+            actual_start = null;
+            actual_end = null;
+          }
+
+          await lancyService.updateRoomStatus(room.number, status, {
+            actual_start_time: actual_start,
+            actual_end_time: actual_end,
+            cleaned_by_name: status === "ready" ? room.attendant : null,
+          });
+        }
       }
 
       await lancyService.updateShift({
@@ -964,6 +1002,11 @@ function LancyApp() {
   };
 
   const buildLancyStepMessage = async (step: number) => {
+    if (step === 6) {
+      addLancyMessage(`All rooms occupied. 12:30 PM. Checkin complete.`);
+      return;
+    }
+
     if (isRealSupabaseConfigured && supabase) {
       const { data: roomsData } = await supabase
         .from('room_assignments')
@@ -2192,10 +2235,10 @@ function LancyApp() {
               </span>
               <button
                 onClick={handleNext}
-                disabled={(currentStep === 0 && !assignmentsConfirmed) || currentStep === 5}
+                disabled={(currentStep === 0 && !assignmentsConfirmed) || currentStep === 6}
                 className="h-9 px-4 rounded-[10px] bg-[#2A9D8F] text-white text-[13px] font-extrabold active:scale-[0.97] transition-all shrink-0 shadow-sm hover:bg-[#208075] disabled:opacity-40 disabled:pointer-events-none disabled:active:scale-100 cursor-pointer"
               >
-                {currentStep === 5 ? "Done" : "Next"}
+                {currentStep === 6 ? "Done" : "Next"}
               </button>
             </div>
           </div>
