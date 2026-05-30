@@ -323,6 +323,11 @@ function LancyApp() {
 
   // Keep React state 100% synchronized with persistent database and subscribe to realtime updates
   useEffect(() => {
+    console.log("=== Lancy Live Diagnostics ===");
+    console.log("Supabase Connection Configured:", isRealSupabaseConfigured);
+    console.log("Gemini API Key Configured:", !!lancyService.getGeminiClient());
+    console.log("===============================");
+
     const syncFromDb = async () => {
       const dbRooms = await lancyService.getRooms();
       const dbHks = await lancyService.getHousekeepers();
