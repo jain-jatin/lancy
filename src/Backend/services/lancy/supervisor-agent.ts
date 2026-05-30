@@ -287,8 +287,8 @@ End with a yes/no question so he can act immediately.
       return { reply, buttons: [] };
     }
 
-    // Intent B: FLOOR STATUS ("floor 2" / "how is floor 2" / "4th floor" / "floor 4")
-    const floorMatch = cleanMsg.match(/\b([2-4])(?:st|nd|rd|th)?\s+floor\b|\bfloor\s+([2-4])\b/i);
+    // Intent B: FLOOR STATUS ("floor 2" / "how is floor 2" / "5th floor" / "floor 5")
+    const floorMatch = cleanMsg.match(/\b([2-5])(?:st|nd|rd|th)?\s+floor\b|\bfloor\s+([2-5])\b/i);
     let fNum: number | null = null;
     if (floorMatch) {
       fNum = parseInt(floorMatch[1] || floorMatch[2], 10);
@@ -298,6 +298,8 @@ End with a yes/no question so he can act immediately.
       fNum = 3;
     } else if (cleanMsg.includes("fourth floor") || cleanMsg.includes("4th floor")) {
       fNum = 4;
+    } else if (cleanMsg.includes("fifth floor") || cleanMsg.includes("5th floor")) {
+      fNum = 5;
     }
 
     if (fNum !== null) {

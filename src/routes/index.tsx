@@ -2047,15 +2047,24 @@ function LancyApp() {
           return;
         }
 
-        // No room number either — just re-prompt
-        pushMsgWithNudges(
-          <LancyBubble>
-            I need a housekeeper name. Which one would you like?
-          </LancyBubble>,
-          hkNames
-        );
-        // Keep flow.step and flow.action unchanged
-        return;
+        // Check if it's a general question/freeform message rather than an invalid housekeeper name
+        const isGeneralQuery = clean.length > 8 && !hkNames.some(name => clean.includes(name.toLowerCase())) &&
+          (/(?:who|what|where|when|why|how|floor|status|working|ready|dirty|cleaning|everyone|delay|progress|snapshot|late)/i.test(clean) || clean.split(/\s+/).length > 2);
+
+        if (isGeneralQuery) {
+          setFlow({ step: 'IDLE', selectedHK: null, selectedRoom: null, action: null });
+          // Fall through to let the freeform/NLP routing handle it
+        } else {
+          // No room number either — just re-prompt
+          pushMsgWithNudges(
+            <LancyBubble>
+              I need a housekeeper name. Which one would you like?
+            </LancyBubble>,
+            hkNames
+          );
+          // Keep flow.step and flow.action unchanged
+          return;
+        }
       }
     }
 
