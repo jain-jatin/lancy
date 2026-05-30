@@ -476,6 +476,17 @@ function LancyApp() {
   }, [selectedTime, tab]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll chat feed to bottom on new messages
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [extra]);
+
   const onSendRef = useRef<(text: string) => Promise<void>>(async () => { });
 
   const pushMsg = (node: React.ReactNode, id: string = crypto.randomUUID()) =>
