@@ -20,13 +20,14 @@ export const continuingRooms = ["404", "405", "502"];
 
 export function timeToMinutes(timeStr: string): number {
   if (!timeStr) return 600;
-  if (timeStr.includes("T")) {
-    const d = new Date(timeStr);
-    if (!isNaN(d.getTime())) {
-      return d.getHours() * 60 + d.getMinutes();
+  let working = timeStr.trim();
+  if (working.includes("T")) {
+    const parts = working.split("T");
+    if (parts.length > 1) {
+      working = parts[1];
     }
   }
-  const parts = timeStr.split(":");
+  const parts = working.split(":");
   const h = Number(parts[0]);
   const m = Number(parts[1]);
   return (isNaN(h) ? 10 : h) * 60 + (isNaN(m) ? 0 : m);

@@ -1404,8 +1404,13 @@ function LancyApp() {
 
     // If actively cleaning, they're committed — schedule after that room ends
     const cleaningRoom = hkRooms.find(r => isStatusCleaning(r.status));
-    if (cleaningRoom?.scheduled_end_time) {
-      return timeToMinutes(cleaningRoom.scheduled_end_time);
+    if (cleaningRoom) {
+      if (cleaningRoom.actual_start_time) {
+        return timeToMinutes(cleaningRoom.actual_start_time) + getDuration(cleaningRoom.type);
+      }
+      if (cleaningRoom.scheduled_end_time) {
+        return timeToMinutes(cleaningRoom.scheduled_end_time);
+      }
     }
 
     // HK is idle — anchor from current simulation time (they're available now)
@@ -1481,12 +1486,12 @@ function LancyApp() {
     const remainingFromRooms = (fromHk.rooms || []).filter(num => num !== roomNum);
     await lancyService.updateHousekeeper(fromHkName, { rooms: remainingFromRooms });
 
-    // Recalculate source HK's UPCOMING queue only (skip past/ready rooms — they're done)
+    // Recalculate source HK's UPCOMING queue only (skip past/ready & cleaning rooms — they're active/done)
     const srcAnchorMins = getHkQueueAnchorMins(fromHkName, dbRooms);
     let currentMins = srcAnchorMins;
     for (const num of remainingFromRooms) {
       const r = dbRooms.find(rm => rm.number === num);
-      if (!r || isStatusReady(r.status)) continue; // skip past rooms
+      if (!r || isStatusReady(r.status) || isStatusCleaning(r.status)) continue; // skip past and cleaning rooms
       const duration = getDuration(r.type);
       const start = currentMins;
       const end = currentMins + duration;
@@ -1503,13 +1508,13 @@ function LancyApp() {
     const movingPriority = typeOrder[movedRoom?.type ?? 'Standard'] ?? 2;
 
     const toAllRooms = toHk.rooms || [];
-    const toPastRooms = toAllRooms.filter(num => {
+    const toCompletedAndCleaningRooms = toAllRooms.filter(num => {
       const r = dbRooms.find(rm => rm.number === num);
-      return r && isStatusReady(r.status);
+      return r && (isStatusReady(r.status) || isStatusCleaning(r.status));
     });
     const toUpcomingRooms = toAllRooms.filter(num => {
       const r = dbRooms.find(rm => rm.number === num);
-      return r && !isStatusReady(r.status);
+      return r && !isStatusReady(r.status) && !isStatusCleaning(r.status);
     });
 
     // Insert into upcoming at priority position
@@ -1525,14 +1530,14 @@ function LancyApp() {
       ...toUpcomingRooms.slice(insertAt)
     ];
 
-    // Merge: past rooms first (order preserved), then reordered upcoming
-    const newToRooms = [...toPastRooms, ...newUpcoming];
+    // Merge: completed and cleaning rooms first (order preserved), then reordered upcoming
+    const newToRooms = [...toCompletedAndCleaningRooms, ...newUpcoming];
     await lancyService.updateHousekeeper(toHkName, { rooms: newToRooms });
 
-    // Recalculate dest HK's upcoming queue from current anchor (skip past rooms)
+    // Recalculate dest HK's upcoming queue from current anchor (skip past & cleaning rooms)
     currentMins = getHkQueueAnchorMins(toHkName, dbRooms);
     const toHkUpdatedRooms = [];
-    for (const num of newUpcoming) { // only upcoming — past rooms keep their existing times
+    for (const num of newUpcoming) { // only upcoming — past & cleaning rooms keep their existing times
       const r = dbRooms.find(rm => rm.number === num);
       if (!r) continue;
       const duration = getDuration(r.type);
@@ -2538,6 +2543,7 @@ function LancyApp() {
                 setDbHksList(hks);
                 setSimState(compileSimulation(selectedTime, rms, hks));
               }}
+              onReassignRoom={reassignRoomBetweenHks}
             />
           </div>
         </div>
@@ -2551,6 +2557,7 @@ function LancyApp() {
             onUpdateLancy={handleUpdateFromLancy}
             onUpdateRoomStatus={handleUpdateRoomStatus}
             simTime={selectedTime}
+            onReassignRoom={reassignRoomBetweenHks}
           />
         )}
 

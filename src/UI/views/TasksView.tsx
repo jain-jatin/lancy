@@ -11,9 +11,10 @@ interface Props {
   simTime: string;
   onUpdateRoomStatus: (number: string, status: Room["status"], updates?: Partial<Room>) => void;
   onRefreshState: () => Promise<void>;
+  onReassignRoom: (roomNum: string, fromHkName: string, toHkName: string) => Promise<any>;
 }
 
-export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus, onRefreshState }: Props) {
+export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus, onRefreshState, onReassignRoom }: Props) {
   const [selectedHk, setSelectedHk] = useState<string>("Ana");
   const [reassigningRoom, setReassigningRoom] = useState<Room | null>(null);
   const [tempHk, setTempHk] = useState<string | null>(null);
@@ -52,135 +53,9 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
       if (!reassigningRoom) return;
       const rNum = reassigningRoom.number;
       const sourceHkName = reassigningRoom.attendant;
+      if (!sourceHkName) return;
 
-      // Find target housekeeper's current queue from database
-      const targetHk = housekeepers.find((h) => h.name === targetHkName);
-      if (!targetHk) {
-        toast.error(`Housekeeper ${targetHkName} not found.`);
-        return;
-      }
-
-      // Remove from original housekeeper queue
-      let nextRooms: string[] = [];
-      if (sourceHkName) {
-        const sourceHk = housekeepers.find((h) => h.name === sourceHkName);
-        if (sourceHk) {
-          nextRooms = (sourceHk.rooms || []).filter((num) => num !== rNum);
-          await lancyService.updateHousekeeper(sourceHkName, { rooms: nextRooms });
-        }
-      }
-
-      // Insert room into target housekeeper queue based on priority: Suite first, Deluxe second, Standard third. Placed at the end of that type group.
-      const filtered = (targetHk.rooms || []).filter((num) => num !== rNum);
-      const activeQueue: string[] = [];
-      const upcomingQueue: string[] = [];
-
-      filtered.forEach((num) => {
-        const rm = roomsList.find((r) => r.number === num);
-        if (rm && (rm.status === "ready" || rm.status === "cleaning" || rm.actual_start_time || rm.actual_end_time)) {
-          activeQueue.push(num);
-        } else {
-          upcomingQueue.push(num);
-        }
-      });
-
-      const suites: string[] = [];
-      const deluxe: string[] = [];
-      const standard: string[] = [];
-
-      upcomingQueue.forEach((num) => {
-        const rm = roomsList.find((r) => r.number === num);
-        if (rm?.type === "STE") suites.push(num);
-        else if (rm?.type === "DLX") deluxe.push(num);
-        else standard.push(num);
-      });
-
-      if (reassigningRoom.type === "STE") {
-        suites.push(rNum);
-      } else if (reassigningRoom.type === "DLX") {
-        deluxe.push(rNum);
-      } else {
-        standard.push(rNum);
-      }
-
-      const updatedRooms = [...activeQueue, ...suites, ...deluxe, ...standard];
-
-      // Update target housekeeper rooms
-      await lancyService.updateHousekeeper(targetHkName, { rooms: updatedRooms });
-
-      // Recalculate timings for source housekeeper's remaining queue
-      if (sourceHkName) {
-        let lastCompletedMins = 600;
-        const sourceRoomsObjs = nextRooms.map(num => roomsList.find(r => r.number === num)).filter(Boolean) as Room[];
-        const sourceNonUpcoming = sourceRoomsObjs.filter(r => r.status === "ready" || r.status === "cleaning" || r.actual_start_time || r.actual_end_time);
-        if (sourceNonUpcoming.length > 0) {
-          let maxMins = 600;
-          for (const r of sourceNonUpcoming) {
-            const endStr = r.scheduled_end_time || r.actual_end_time;
-            if (endStr) {
-              const m = timeToMinutes(endStr);
-              if (m > maxMins) maxMins = m;
-            }
-          }
-          lastCompletedMins = maxMins;
-        }
-
-        let currentMins = lastCompletedMins;
-        for (const num of nextRooms) {
-          const rm = roomsList.find((r) => r.number === num);
-          if (!rm) continue;
-
-          if (rm.status !== "ready" && rm.status !== "cleaning" && !rm.actual_start_time && !rm.actual_end_time) {
-            const duration = rm.type === "STE" ? 45 : rm.type === "DLX" ? 35 : 25;
-            const start = currentMins;
-            const end = currentMins + duration;
-
-            await lancyService.updateRoomStatus(num, "dirty", {
-              attendant: sourceHkName,
-              scheduled_start_time: minutesToTime(start),
-              scheduled_end_time: minutesToTime(end),
-            });
-
-            currentMins = end;
-          }
-        }
-      }
-
-      // Calculate new timings for target housekeeper's entire queue
-      let lastCompletedMins = 600;
-      const targetRoomsObjs = updatedRooms.map(num => roomsList.find(r => r.number === num)).filter(Boolean) as Room[];
-      const targetNonUpcoming = targetRoomsObjs.filter(r => r.status === "ready" || r.status === "cleaning" || r.actual_start_time || r.actual_end_time);
-      if (targetNonUpcoming.length > 0) {
-        let maxMins = 600;
-        for (const r of targetNonUpcoming) {
-          const endStr = r.scheduled_end_time || r.actual_end_time;
-          if (endStr) {
-            const m = timeToMinutes(endStr);
-            if (m > maxMins) maxMins = m;
-          }
-        }
-        lastCompletedMins = maxMins;
-      }
-
-      let currentMins = lastCompletedMins;
-      for (const num of updatedRooms) {
-        const rm = roomsList.find((r) => r.number === num);
-        if (!rm) continue;
-
-        if (rm.status !== "ready" && rm.status !== "cleaning" && !rm.actual_start_time && !rm.actual_end_time) {
-          const duration = rm.type === "STE" ? 45 : rm.type === "DLX" ? 35 : 25;
-          const start = currentMins;
-          const end = currentMins + duration;
-
-          await lancyService.updateRoomStatus(num, "dirty", {
-            attendant: targetHkName,
-            scheduled_start_time: minutesToTime(start),
-            scheduled_end_time: minutesToTime(end),
-          });
-
-          currentMins = end;
-        }
-      }
+      await onReassignRoom(rNum, sourceHkName, targetHkName);
 
       toast.success(`Room ${rNum} reassigned to ${targetHkName}`);
       setReassigningRoom(null);
@@ -204,7 +79,13 @@ export function TasksView({ roomsList, housekeepers, simTime, onUpdateRoomStatus
 
   // Group task lists by status
   const currentTasks = filteredTasks.filter((t) => t.status === "cleaning");
-  const pastTasks = filteredTasks.filter((t) => t.status === "ready");
+  const pastTasks = filteredTasks
+    .filter((t) => t.status === "ready")
+    .sort((a, b) => {
+      const timeA = timeToMinutes(a.actual_end_time || "00:00");
+      const timeB = timeToMinutes(b.actual_end_time || "00:00");
+      return timeB - timeA;
+    });
 
   // Sort upcoming tasks by priority: Suite -> Deluxe -> Standard, then by start time
   const upcomingTasks = filteredTasks

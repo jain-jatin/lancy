@@ -18,6 +18,7 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus, s
   const [hkList, setHkList] = useState<Housekeeper[]>([]);
   const [roomsList, setRoomsList] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
 
   const fetchLiveState = async () => {
     setLoading(true);
@@ -128,21 +129,47 @@ export function RoomDetail({ room, onClose, onUpdateLancy, onUpdateRoomStatus, s
                 <div className="space-y-4">
                   {/* Reassignment Dropdown Panel */}
                   <div className="rounded-[18px] bg-white border border-[#E8E5DF] p-4 shadow-sm space-y-3.5">
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1.5 relative">
                       <label className="text-[11px] font-extrabold text-muted-foreground uppercase tracking-wider pl-0.5">Assigned Attendant</label>
-                      <div className="relative">
-                        <select
-                          value={hkName || ""}
-                          onChange={(e) => handleReassign(e.target.value)}
-                          className="w-full h-11 px-3.5 rounded-xl border border-[#E8E5DF] bg-[#F8F7F4] text-[13px] font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none cursor-pointer"
-                        >
-                          <option value="" disabled>Select Housekeeper</option>
-                          {hkList.map((h) => (
-                            <option key={h.name} value={h.name}>{h.name}</option>
-                          ))}
-                        </select>
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground font-bold">▼</div>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsOpen(!isOpen)}
+                        className="w-full h-10 px-3.5 rounded-xl border border-[#E8E5DF] bg-[#F8F7F4] text-[12.5px] font-extrabold text-[#1A1A2E] focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 flex items-center justify-between transition-all active:scale-[0.98] cursor-pointer shadow-sm"
+                      >
+                        <span className={hkName ? "text-[#1A1A2E]" : "text-muted-foreground"}>
+                          {hkName || "Select Housekeeper"}
+                        </span>
+                        <span className={`text-[9px] text-muted-foreground/80 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}>▼</span>
+                      </button>
+
+                      {isOpen && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+                          <div className="absolute top-[calc(100%+4px)] left-0 right-0 z-20 bg-white border border-[#E8E5DF] rounded-xl shadow-lg py-1.5 animate-fade-in max-h-[180px] overflow-y-auto">
+                            {hkList.map((h) => {
+                              const isSelected = h.name === hkName;
+                              return (
+                                <button
+                                  key={h.name}
+                                  type="button"
+                                  onClick={() => {
+                                    handleReassign(h.name);
+                                    setIsOpen(false);
+                                  }}
+                                  className={`w-full text-left px-4 py-2 text-[12.5px] font-extrabold transition-colors duration-150 flex items-center justify-between ${
+                                    isSelected
+                                      ? "bg-[#E8F5E9] text-[#2E7D32] border-l-4 border-[#2E7D32]"
+                                      : "text-foreground hover:bg-[#F8F7F4] active:bg-[#EFEDE8]"
+                                  }`}
+                                >
+                                  <span>{h.name}</span>
+                                  {isSelected && <span className="text-[10px]">✓</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {hkName && (
