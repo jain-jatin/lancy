@@ -1607,7 +1607,7 @@ function LancyApp() {
     }
 
     // Standalone reorder with no HK context — try to resolve HK from room number, otherwise start guided flow
-    const isReorderIntent = clean.includes("reorder") || clean.includes("rework") ||
+    const isReorderIntent = clean.includes("reorder") ||
       (clean.includes("order") && (clean.includes("task") || clean.includes("clean")));
     if (flow.step === 'IDLE' && (isReorderIntent || clean === "assign to someone else")) {
       const roomInMsg = clean.match(/\b\d{3}\b/);
