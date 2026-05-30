@@ -64,7 +64,7 @@ export const supervisorAgent = {
       try {
         const systemPrompt = await dbOperations.buildLiveSystemPrompt(simTime);
         const model = genAI.getGenerativeModel({
-          model: "gemini-1.5-flash",
+          model: "gemini-2.5-flash",
           systemInstruction: systemPrompt,
           generationConfig: { temperature: 0.0 }
         });
@@ -511,7 +511,7 @@ End with a yes/no question so he can act immediately.
           "Do NOT fabricate, guess, or reference any external knowledge. Stay completely grounded in the database context.";
 
         const model = genAI.getGenerativeModel({
-          model: "gemini-1.5-flash",
+          model: "gemini-2.5-flash",
           tools: [{ functionDeclarations: LANCY_TOOLS }],
           systemInstruction: systemPrompt,
           generationConfig: { temperature: 0.0 }

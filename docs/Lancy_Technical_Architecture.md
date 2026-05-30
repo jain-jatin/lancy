@@ -4,7 +4,7 @@
 ### 1. Core Technology Stack
 * **Frontend**: Next.js 14, TypeScript, Tailwind CSS, TanStack Start, Lucide Icons.
 * **Backend Database**: Supabase (PostgreSQL, Realtime Engine, Row Level Security).
-* **AI Engine**: Google Gemini 1.5 Flash (via `@google/generative-ai` SDK).
+* **AI Engine**: Google Gemini 2.5 Flash (via `@google/generative-ai` SDK).
 * **Local Fallback**: LocalStorage database simulation layer for client-only offline operations.
 
 ---
@@ -133,7 +133,7 @@ const genAI = new GoogleGenerativeAI(process.env.VITE_GEMINI_API_KEY);
 
 export async function askLancy(message: string, roomsState: any) {
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.5-flash",
     systemInstruction: "You are Lancy, the housekeeping AI coordinator for Maplewood Suites. Guide supervisor Marcus based on the provided hotel state."
   });
 

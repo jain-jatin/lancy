@@ -152,7 +152,7 @@ Respond in 2 sentences maximum.
 `;
 
         const model = genAI.getGenerativeModel({
-          model: "gemini-1.5-flash",
+          model: "gemini-2.5-flash",
           tools: [{ functionDeclarations: LANCY_TOOLS }],
           systemInstruction: fullPrompt,
           generationConfig: { temperature: 0.0 }
